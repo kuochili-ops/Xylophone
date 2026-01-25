@@ -2,125 +2,129 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴機 2.0 - 多軌階梯演奏</title>
+    <title>AI 木琴機 2.0 - 自動修正多軌版</title>
     <style>
-        body { margin: 0; background: #010409; color: #fff; font-family: sans-serif; overflow: hidden; display: flex; flex-direction: column; height: 100vh; }
-        .panel { background: rgba(15, 23, 42, 0.95); padding: 12px; display: flex; gap: 10px; justify-content: center; z-index: 100; border-bottom: 2px solid #3b82f6; }
-        canvas { flex-grow: 1; width: 100%; height: 100%; }
-        button { border: none; padding: 10px 18px; border-radius: 6px; cursor: pointer; font-weight: bold; color: white; background: #3b82f6; }
-        #status { position: fixed; bottom: 20px; left: 20px; font-size: 12px; color: #64748b; }
+        body { margin: 0; background: #020617; color: #fff; font-family: sans-serif; overflow: hidden; }
+        .ui { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; z-index: 100; background: rgba(15, 23, 42, 0.9); padding: 12px; border-radius: 12px; border: 1px solid #3b82f6; }
+        button { padding: 8px 16px; border-radius: 6px; border: none; background: #3b82f6; color: white; font-weight: bold; cursor: pointer; }
+        .info { position: fixed; bottom: 20px; right: 20px; font-family: monospace; font-size: 12px; color: #60a5fa; text-align: right; }
     </style>
 </head>
 <body>
 
-<div class="panel">
-    <button onclick="setupMultiLanes()">🔄 重置並生成雙軌階梯</button>
-    <button onclick="isPaused = !isPaused" style="background:#10b981">⏯️ 暫停/播放</button>
+<div class="ui">
+    <button onclick="initScene()">🔄 生成新路徑</button>
+    <button id="modeBtn" onclick="toggleMode()" style="background:#8b5cf6">模式: 訓練中</button>
 </div>
 
-<div id="status">多軌物理模式已啟動 | 頻率自動分流</div>
-<canvas id="mainCanvas"></canvas>
+<div class="info" id="debugInfo">系統監控中...</div>
+<canvas id="stage"></canvas>
 
 <script>
-const canvas = document.getElementById('mainCanvas');
+const canvas = document.getElementById('stage');
 const ctx = canvas.getContext('2d');
 let audioCtx = null;
-let isPaused = false;
-
-// 模擬不同音域的頻率
-const melodyFreqs = [523.3, 587.3, 659.3, 698.5, 784, 880, 987.8]; // 高音組
-const bassFreqs = [261.6, 293.7, 329.6, 349.2, 392.0]; // 低音組
-
+let isReplay = false;
 let tracks = [];
+
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
-function playSound(freq, type = 'triangle') {
-    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.type = type;
-    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-    gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
-    osc.connect(gain); gain.connect(audioCtx.destination);
-    osc.start(); osc.stop(audioCtx.currentTime + 0.5);
+function toggleMode() {
+    isReplay = !isReplay;
+    document.getElementById('modeBtn').innerText = isReplay ? "模式: 正式演出" : "模式: 訓練中";
 }
 
-function setupMultiLanes() {
+function playSound(freq, type) {
+    if (!audioCtx) audioCtx = new AudioContext();
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    g.gain.setValueAtTime(0.2, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.4);
+    osc.connect(g); g.connect(audioCtx.destination);
+    osc.start(); osc.stop(audioCtx.currentTime + 0.4);
+}
+
+function initScene() {
     tracks = [];
-    const trackConfigs = [
-        { name: "Melody", y: 200, color: "#f87171", freqs: melodyFreqs },
-        { name: "Bass", y: 500, color: "#60a5fa", freqs: bassFreqs }
+    const configs = [
+        { y: 250, color: "#f87171", type: 'triangle' }, // 高音道
+        { y: 550, color: "#60a5fa", type: 'sine' }      // 低音道
     ];
 
-    trackConfigs.forEach(cfg => {
+    configs.forEach(cfg => {
         let steps = [];
-        let curX = 400, curY = cfg.y;
-        
-        // 生成階梯路徑
-        for(let i = 0; i < 20; i++) {
-            steps.push({
-                x: curX, y: curY, 
-                w: 100, h: 18, 
-                freq: cfg.freqs[i % cfg.freqs.length],
-                active: 0
-            });
-            curX += 160; curY += 40; // 形成下坡階梯
+        let cx = 400, cy = cfg.y;
+        for(let i = 0; i < 25; i++) {
+            steps.push({ x: cx, y: cy, w: 110, h: 18, freq: 200 + (Math.random()*600), active: 0 });
+            cx += 170; cy += 45; // 階梯式下滑
         }
-
         tracks.push({
-            steps: steps,
-            ball: { x: 150, y: cfg.y - 100, vx: 3.8, vy: 0, r: 12, color: cfg.color },
+            steps,
+            ball: { x: 150, y: cfg.y - 50, vx: 4, vy: 0, r: 12, color: cfg.color },
+            cfg,
             currentIdx: 0,
-            color: cfg.color
+            failCount: 0
         });
     });
 }
 
 function update() {
-    if (isPaused) return;
+    tracks.forEach(t => {
+        let b = t.ball;
+        b.vy += 0.38; b.x += b.vx; b.y += b.vy;
 
-    tracks.forEach(track => {
-        let b = track.ball;
-        b.vy += 0.35; b.x += b.vx; b.y += b.vy;
+        // --- 自我修正機制 ---
+        let target = t.steps[t.currentIdx];
+        
+        if (target) {
+            // 1. 訓練模式下的「磁力接球」
+            if (!isReplay && b.y > target.y - 150 && b.vy > 0) {
+                target.x += (b.x - target.w/2 - target.x) * 0.4;
+            }
 
-        // 碰撞偵測
-        let s = track.steps[track.currentIdx];
-        if (s && b.x + b.r > s.x && b.x - b.r < s.x + s.w && b.y + b.r > s.y && b.vy > 0) {
-            b.y = s.y - b.r;
-            b.vy = -7.5; // 彈跳力度
-            s.active = 15;
-            playSound(s.freq, track.color === "#f87171" ? 'triangle' : 'sine');
-            track.currentIdx++;
+            // 2. 掉落偵測與自動重生
+            if (b.y > target.y + 300) {
+                t.failCount++;
+                const prev = t.steps[Math.max(0, t.currentIdx - 1)];
+                b.x = prev.x + 50;
+                b.y = prev.y - 100;
+                b.vy = 0; // 重置垂直速度防止連續掉落
+                document.getElementById('debugInfo').innerText = `軌道修正中: 重生於音板 ${t.currentIdx}`;
+            }
+
+            // 碰撞判定
+            if (b.x + b.r > target.x && b.x - b.r < target.x + target.w && 
+                b.y + b.r > target.y && b.y < target.y + target.h && b.vy > 0) {
+                b.y = target.y - b.r;
+                b.vy = -8;
+                target.active = 15;
+                playSound(target.freq, t.cfg.type);
+                t.currentIdx++;
+                if (t.currentIdx >= t.steps.length) t.currentIdx = 0; // 循環播放測試
+            }
         }
     });
 }
 
 function draw() {
-    ctx.fillStyle = "#020617";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    const cameraX = tracks.length > 0 ? tracks[0].ball.x - 300 : 0;
+    ctx.fillStyle = "#020617"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const camX = tracks[0].ball.x - 300;
 
     ctx.save();
-    ctx.translate(-cameraX, 0);
+    ctx.translate(-camX, 0);
 
-    tracks.forEach(track => {
-        // 畫音板
-        track.steps.forEach(s => {
-            ctx.fillStyle = s.active > 0 ? "#fff" : track.color;
+    tracks.forEach(t => {
+        t.steps.forEach(s => {
+            ctx.fillStyle = s.active > 0 ? "#fff" : t.cfg.color;
             if(s.active > 0) s.active--;
-            ctx.beginPath();
-            ctx.roundRect(s.x, s.y, s.w, s.h, 5);
-            ctx.fill();
+            ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, s.h, 6); ctx.fill();
         });
-
-        // 畫球
-        let b = track.ball;
-        ctx.shadowBlur = 20; ctx.shadowColor = b.color;
-        ctx.fillStyle = b.color;
-        ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = t.ball.color;
+        ctx.shadowBlur = 15; ctx.shadowColor = t.ball.color;
+        ctx.beginPath(); ctx.arc(t.ball.x, t.ball.y, t.ball.r, 0, Math.PI*2); ctx.fill();
         ctx.shadowBlur = 0;
     });
 
@@ -129,7 +133,7 @@ function draw() {
     requestAnimationFrame(draw);
 }
 
-setupMultiLanes();
+initScene();
 draw();
 </script>
 </body>
