@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>Canvas 木琴滾球演奏機</title>
+    <style>
+        body { margin: 0; background: #2c3e50; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; overflow: hidden; color: white; font-family: sans-serif; }
+        canvas { background: #34495e; box-shadow: 0 0 20px rgba(0,0,0,0.5); border-radius: 8px; cursor: pointer; }
+        .info { margin-bottom: 10px; text-align: center; }
+    </style>
+</head>
+<body>
+
+<div class="info">
+    <h2>木琴滾球演奏機</h2>
+    <p>點擊畫布放下一顆新球，自動演奏《小星星》片段</p>
+</div>
+<canvas id="xylophoneCanvas" width="800" height="500"></canvas>
+
+<script>
+const canvas = document.getElementById('xylophoneCanvas');
+const ctx = canvas.getContext('2d');
+
+// 音訊上下文
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+// 歌曲數據：C4 到 C5 的頻率映射
+const notes = {
+    'C': 261.63, 'D': 293.66, 'E': 329.63, 'F': 349.23, 
+    'G': 392.00, 'A': 440.00, 'B': 493.88, 'C5': 523.25
+};
+
+// 小星星旋律
+const melody = ['C', 'C', 'G', 'G', 'A', 'A', 'G', 'F', 'F', 'E', 'E', 'D', 'D', 'C'];
+
+// 木琴階梯配置
+const steps = [];
+const stepWidth = 50;
+const stepHeight = 15;
+
+// 初始化階梯位置 (階梯狀下降)
+melody.forEach((note, i) => {
+    steps.push({
+        x: 50 + i * 50,
+        y: 150 + i * 20,
+        note: note,
+        freq: notes[note],
+        active: 0 // 用於動畫回饋
+    });
+});
+
+let balls = [];
+const gravity = 0.25;
+
+function playSound(freq) {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    
+    osc.type = 'triangle'; // 類木琴音色
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    
+    gain.gain.setValueAtTime(0.5, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+    
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.5);
+}
+
+function update() {
+    balls.forEach((ball, bIdx) => {
+        ball.vy += gravity;
+        ball.x += ball.vx;
+        ball.y += ball.vy;
+
+        // 碰撞檢測
+        steps.forEach(step => {
+            if (ball.x > step.x && ball.x < step.x + stepWidth &&
+                ball.y + ball.r > step.y && ball.y - ball.r < step.y + stepHeight &&
+                ball.vy > 0) {
+                
+                ball.y = step.y - ball.r;
+                ball.vy *= -0.6; // 反彈力
+                ball.vx = 1.5;   // 給予向前的推力
+                
+                step.active = 10; // 觸發發光動畫
+                playSound(step.freq);
+            }
+        });
+
+        // 移除掉出畫面以外的球
+        if (ball.y > canvas.height) balls.splice(bIdx, 1);
+    });
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // 畫木琴階梯
+    steps.forEach(step => {
+        ctx.fillStyle = step.active > 0 ? `rgb(255, ${200 - step.active*20}, 0)` : '#ecf0f1';
+        if (step.active > 0) step.active--;
+        
+        ctx.beginPath();
+        ctx.roundRect(step.x, step.y, stepWidth - 5, stepHeight, 5);
+        ctx.fill();
+        
+        // 標註音符
+        ctx.fillStyle = '#2c3e50';
+        ctx.font = '10px Arial';
+        ctx.fillText(step.note, step.x + 5, step.y + 12);
+    });
+
+    // 畫木球
+    balls.forEach(ball => {
+        ctx.fillStyle = '#e67e22';
+        ctx.beginPath();
+        ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // 球體光澤
+        ctx.fillStyle = 'rgba(255,255,255,0.3)';
+        ctx.beginPath();
+        ctx.arc(ball.x - 3, ball.y - 3, 3, 0, Math.PI * 2);
+        ctx.fill();
+    });
+
+    update();
+    requestAnimationFrame(draw);
+}
+
+canvas.addEventListener('mousedown', () => {
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    balls.push({
+        x: 40,
+        y: 50,
+        vx: 1,
+        vy: 0,
+        r: 10
+    });
+});
+
+draw();
+</script>
+
+</body>
+</html>
