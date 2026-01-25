@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴機 - 影音輸出版</title>
+    <title>AI 木琴機 - 影音輸出終極版</title>
     <style>
         body { margin: 0; background: #000; color: #fff; font-family: sans-serif; overflow: hidden; display: flex; flex-direction: column; height: 100vh; }
         .panel { background: rgba(15, 23, 42, 0.95); padding: 12px; display: flex; gap: 8px; justify-content: center; align-items: center; z-index: 100; border-bottom: 2px solid #3b82f6; }
@@ -18,14 +18,14 @@
 <div class="panel">
     <input type="file" id="bgUpload" accept="image/*" style="display:none" onchange="handleBg(this)">
     <button onclick="document.getElementById('bgUpload').click()" style="background:#6366f1">🖼️ 設定背景</button>
-    <input type="text" id="notation" value="1155665 4433221" size="15">
-    <input type="text" id="endMsg" placeholder="留言內容" value="祝你天天開心 🎶">
+    <input type="text" id="notation" value="1231 1231 345  345" size="15">
+    <input type="text" id="endMsg" placeholder="留言內容" value="精彩演出，謝謝收看 🎶">
     <button onclick="startEngine(false)">訓練</button>
     <button id="replayBtn" style="display:none; background:#10b981" onclick="startEngine(true)">演奏</button>
-    <button id="recBtn" class="btn-rec" style="display:none" onclick="startRecording()">🔴 錄製並分享影片</button>
+    <button id="recBtn" class="btn-rec" style="display:none" onclick="startRecording()">🔴 錄影並分享</button>
 </div>
 
-<div id="statusOverlay">等待中...</div>
+<div id="statusOverlay">準備就緒</div>
 <canvas id="mainCanvas"></canvas>
 
 <script>
@@ -36,7 +36,7 @@ let bgImg = null;
 
 const freqMap = { '1': 261.6, '2': 293.7, '3': 329.6, '4': 349.2, '5': 392.0, '6': 440.0, '7': 493.9, '+1': 523.3 };
 let steps = [], ball = null, camera = { x: 0, y: 0 }, currentIdx = 0, isStarted = false, isReplay = false, rot = 0;
-let showMsgTicks = 0;
+let postRollTicks = 0; 
 
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
@@ -44,16 +44,13 @@ canvas.height = window.innerHeight;
 function handleBg(input) {
     if (input.files && input.files[0]) {
         const reader = new FileReader();
-        reader.onload = e => {
-            bgImg = new Image();
-            bgImg.src = e.target.result;
-        };
+        reader.onload = e => { bgImg = new Image(); bgImg.src = e.target.result; };
         reader.readAsDataURL(input.files[0]);
     }
 }
 
 function updateUI() {
-    const saved = localStorage.getItem('v7_' + document.getElementById('notation').value);
+    const saved = localStorage.getItem('v8_' + document.getElementById('notation').value);
     document.getElementById('replayBtn').style.display = saved ? "inline-block" : "none";
     document.getElementById('recBtn').style.display = saved ? "inline-block" : "none";
 }
@@ -63,9 +60,9 @@ function startEngine(replayMode) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         streamDest = audioCtx.createMediaStreamDestination();
     }
-    isStarted = false; ball = null; isReplay = replayMode; currentIdx = 0; showMsgTicks = 0;
+    isStarted = false; ball = null; isReplay = replayMode; currentIdx = 0; postRollTicks = 0;
     
-    const key = 'v7_' + document.getElementById('notation').value;
+    const key = 'v8_' + document.getElementById('notation').value;
     const saved = localStorage.getItem(key);
 
     if (isReplay && saved) {
@@ -84,6 +81,7 @@ function startEngine(replayMode) {
     }
     ball = { x: steps[0].x + 75, y: steps[0].y - 15, vx: 0, vy: 0, r: 12, on: true };
     rot = 0; isStarted = true;
+    document.getElementById('statusOverlay').innerText = isReplay ? "正在播放..." : "正在訓練...";
 }
 
 function startRecording() {
@@ -100,12 +98,12 @@ function startRecording() {
         const blob = new Blob(chunks, { type: 'video/webm' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url; a.download = `木琴演奏_${new Date().getTime()}.webm`; a.click();
-        document.getElementById('statusOverlay').innerText = "✅ 錄製完成已下載";
+        a.href = url; a.download = `Xylophone_${new Date().getTime()}.webm`; a.click();
+        document.getElementById('statusOverlay').innerText = "✅ 錄製成功";
     };
 
     recorder.start();
-    document.getElementById('statusOverlay').innerText = "🔴 錄製影音中...";
+    document.getElementById('statusOverlay').innerText = "🔴 影音錄製中...";
     startEngine(true);
 }
 
@@ -115,9 +113,7 @@ function play(f) {
     g.gain.setValueAtTime(0, audioCtx.currentTime);
     g.gain.linearRampToValueAtTime(0.5, audioCtx.currentTime+0.01);
     g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime+0.5);
-    o.connect(g); 
-    g.connect(audioCtx.destination);
-    g.connect(streamDest); // 同時輸出到錄影機
+    o.connect(g); g.connect(audioCtx.destination); g.connect(streamDest);
     o.start(); o.stop(audioCtx.currentTime+0.6);
 }
 
@@ -148,32 +144,28 @@ function update() {
 
     if (currentIdx >= steps.length) {
         if (!isReplay) {
-            localStorage.setItem('v7_' + document.getElementById('notation').value, JSON.stringify(steps));
+            localStorage.setItem('v8_' + document.getElementById('notation').value, JSON.stringify(steps));
             updateUI();
         }
         isStarted = false; ball = null;
-        showMsgTicks = 180; // 顯示留言 3 秒 (60fps * 3)
+        postRollTicks = 180; // 停留 3 秒
     }
 
-    camera.x += ( (ball?ball.x:steps[0].x) - canvas.width/3 - camera.x) * 0.1;
-    camera.y += ( (ball?ball.y:steps[0].y) - canvas.height/2 - camera.y) * 0.1;
+    camera.x += ( (ball?ball.x:steps[steps.length-1].x) - canvas.width/3 - camera.x) * 0.1;
+    camera.y += ( (ball?ball.y:steps[steps.length-1].y) - canvas.height/2 - camera.y) * 0.1;
 }
 
 function draw() {
-    // 1. 繪製背景 (包含上傳的照片)
-    ctx.fillStyle = "#020617";
-    ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle = "#020617"; ctx.fillRect(0,0,canvas.width,canvas.height);
     if (bgImg) {
         const scale = Math.max(canvas.width / bgImg.width, canvas.height / bgImg.height);
         const w = bgImg.width * scale, h = bgImg.height * scale;
-        ctx.save();
-        ctx.globalAlpha = 0.4; // 背景透明度
-        ctx.drawImage(bgImg, (canvas.width-w)/2, (canvas.height-h)/2, w, h);
-        ctx.restore();
+        ctx.save(); ctx.globalAlpha = 0.4; ctx.drawImage(bgImg, (canvas.width-w)/2, (canvas.height-h)/2, w, h); ctx.restore();
     }
 
     ctx.save(); ctx.translate(-camera.x, -camera.y);
-    // 2. 繪製音板
+    
+    // 繪製音板
     steps.forEach((s, i) => {
         ctx.save();
         if (i === 0) {
@@ -185,24 +177,31 @@ function draw() {
         }
         ctx.restore();
     });
-    // 3. 繪製球
+
+    // 繪製留言板（始終掛在最後一個音板下方）
+    const lastStep = steps[steps.length - 1];
+    if (lastStep && steps.length > 1) {
+        const msg = document.getElementById('endMsg').value;
+        const msgWidth = ctx.measureText(msg).width + 40;
+        const boxX = lastStep.x + lastStep.w/2 - msgWidth/2;
+        const boxY = lastStep.y + 60;
+
+        ctx.fillStyle = "rgba(30, 41, 59, 0.85)";
+        ctx.beginPath(); ctx.roundRect(boxX, boxY, msgWidth, 50, 10); ctx.fill();
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.2)"; ctx.stroke();
+        
+        ctx.fillStyle = "#fff";
+        ctx.font = "bold 18px sans-serif"; ctx.textAlign = "center";
+        ctx.fillText(msg, lastStep.x + lastStep.w/2, boxY + 32);
+    }
+
     if (ball) { ctx.fillStyle = "#ef4444"; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2); ctx.fill(); }
+    
     ctx.restore();
 
-    // 4. 繪製結束留言 (Canvas 版，確保錄得到)
-    if (showMsgTicks > 0) {
-        showMsgTicks--;
-        const alpha = Math.min(1, showMsgTicks / 30);
-        ctx.fillStyle = `rgba(30, 41, 59, ${0.8 * alpha})`;
-        ctx.roundRect(canvas.width/2-150, canvas.height/2-50, 300, 100, 15); ctx.fill();
-        ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
-        ctx.font = "bold 20px sans-serif"; ctx.textAlign = "center";
-        ctx.fillText(document.getElementById('endMsg').value, canvas.width/2, canvas.height/2 + 8);
-        
-        // 留言顯示結束後，自動停止錄影
-        if (showMsgTicks === 1 && recorder && recorder.state === "recording") {
-            recorder.stop();
-        }
+    if (postRollTicks > 0) {
+        postRollTicks--;
+        if (postRollTicks === 1 && recorder && recorder.state === "recording") recorder.stop();
     }
 
     update(); requestAnimationFrame(draw);
