@@ -2,38 +2,40 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴機 - 即時感應對齊版</title>
+    <title>AI 木琴機 - 記憶儲存版</title>
     <style>
         body { margin: 0; background: #0f172a; color: #f8fafc; font-family: sans-serif; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; }
-        .panel { position: fixed; top: 0; width: 100%; background: rgba(15, 23, 42, 0.9); padding: 15px; display: flex; gap: 10px; justify-content: center; z-index: 10; border-bottom: 2px solid #3b82f6; }
-        canvas { background: #020617; border-radius: 12px; box-shadow: 0 0 50px rgba(59, 130, 246, 0.1); }
-        .stats { position: fixed; top: 80px; right: 20px; background: rgba(30, 41, 59, 0.9); padding: 15px; border-radius: 8px; border: 1px solid #475569; font-family: monospace; }
+        .panel { position: fixed; top: 0; width: 100%; background: rgba(15, 23, 42, 0.95); padding: 15px; display: flex; gap: 10px; justify-content: center; z-index: 10; border-bottom: 2px solid #3b82f6; }
+        canvas { background: #020617; border-radius: 12px; box-shadow: 0 0 50px rgba(59, 130, 246, 0.2); }
+        .stats { position: fixed; top: 80px; right: 20px; background: rgba(30, 41, 59, 0.9); padding: 15px; border-radius: 8px; border: 1px solid #475569; font-family: monospace; min-width: 200px; }
         .ai-log { position: fixed; bottom: 20px; left: 20px; width: 360px; max-height: 200px; overflow-y: auto; background: rgba(15, 23, 42, 0.95); padding: 12px; border-radius: 6px; color: #fbbf24; font-size: 12px; border-left: 4px solid #3b82f6; }
-        button { background: #3b82f6; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: bold; }
-        .status-tag { color: #10b981; font-weight: bold; }
+        button { background: #10b981; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: bold; }
+        .clear-btn { background: #ef4444; margin-left: 5px; }
+        .highlight { color: #10b981; font-weight: bold; }
     </style>
 </head>
 <body>
 
 <div class="panel">
-    <strong>即時感應修正模式：</strong>
-    <input type="text" id="notation" value="1231 1231 345  345" size="35" style="padding:8px; background:#1e293b; color:white; border:1px solid #475569;">
-    <button onclick="triggerStart()">啟動訓練</button>
+    <strong>智慧記憶模式：</strong>
+    <input type="text" id="notation" value="1231 1231 345  345" size="30" style="padding:10px; background:#1e293b; color:white; border:1px solid #475569; border-radius:4px;">
+    <button onclick="initAudioAndStart()">啟動演奏</button>
+    <button class="clear-btn" onclick="clearMemory()">清除記憶</button>
 </div>
 
 <div class="stats">
+    <div>配置狀態: <span id="configState" style="color:#fbbf24">初始配置</span></div>
     <div>嘗試次數: <span id="att">1</span></div>
-    <div>即時 X 校準: <span id="realtimeX">-</span></div>
-    <div>狀態: <span id="fixState" class="status-tag">監測中</span></div>
+    <div>目前音符: <span id="targetNote">-</span></div>
 </div>
 
-<div class="ai-log" id="log">系統：等待啟動...</div>
+<div class="ai-log" id="log">系統：點擊啟動開始演奏或訓練。</div>
 <canvas id="mainCanvas"></canvas>
 
 <script>
 const canvas = document.getElementById('mainCanvas');
 const ctx = canvas.getContext('2d');
-const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+let audioCtx = null;
 
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
@@ -53,11 +55,48 @@ function addLog(msg) {
     l.innerHTML = `<div>[${attempts}] ${msg}</div>` + l.innerHTML;
 }
 
+// 儲存到 LocalStorage
+function saveTrackData() {
+    const data = steps.map(s => ({ x: s.x, y: s.y, w: s.w, label: s.label }));
+    localStorage.setItem('xylophone_track_' + document.getElementById('notation').value, JSON.stringify(data));
+    addLog("<span class='highlight'>💾 演奏成功！最佳位置已存入記憶。</span>");
+}
+
+// 從 LocalStorage 讀取
+function loadTrackData() {
+    const saved = localStorage.getItem('xylophone_track_' + document.getElementById('notation').value);
+    if (saved) {
+        const data = JSON.parse(saved);
+        steps = data.map((d, i) => {
+            return {
+                ...d,
+                freq: freqMap[d.label] || 0,
+                isStartPlate: i === 0,
+                color: i === 0 ? "#64748b" : `hsl(${(i * 50) % 360}, 60%, 50%)`,
+                active: 0,
+                hitCount: 0,
+                h: i === 0 ? 20 : 25
+            };
+        });
+        document.getElementById('configState').innerText = "已讀取記憶配置";
+        document.getElementById('configState').style.color = "#10b981";
+        return true;
+    }
+    return false;
+}
+
+function clearMemory() {
+    localStorage.removeItem('xylophone_track_' + document.getElementById('notation').value);
+    location.reload();
+}
+
 function buildTrack(str) {
+    if (loadTrackData()) return; // 如果有舊資料就不用建立新的
+
     steps = [];
     steps.push({ x: 100, y: 200, w: 150, h: 20, isStartPlate: true, label: "START", color: "#64748b", active: 0, hitCount: 0 });
 
-    let curX = 600, curY = 320; // 初始位置故意設很遠
+    let curX = 600, curY = 320; 
     let notes = str.match(/\+?\d| /g) || [];
     notes.forEach((n) => {
         if (n === ' ') { curX += 160; curY += 80; }
@@ -66,9 +105,12 @@ function buildTrack(str) {
             curX += 160; curY += 45;
         }
     });
+    document.getElementById('configState').innerText = "初始配置 (訓練中)";
 }
 
-function triggerStart() {
+function initAudioAndStart() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
     buildTrack(document.getElementById('notation').value);
     attempts = 1;
     resetAndAutoStart();
@@ -84,10 +126,17 @@ function resetAndAutoStart() {
     document.getElementById('att').innerText = attempts;
 }
 
-function failAndRestart(reason) {
-    addLog(`<span style="color:#f87171">重置：${reason}</span>`);
-    attempts++;
-    setTimeout(resetAndAutoStart, 300);
+function playTone(freq) {
+    if (!audioCtx) return;
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    g.gain.setValueAtTime(0, audioCtx.currentTime);
+    g.gain.linearRampToValueAtTime(0.4, audioCtx.currentTime + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.4);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime + 0.5);
 }
 
 function update() {
@@ -100,29 +149,19 @@ function update() {
         ball.y = steps[0].y - ball.r + (ball.x - (steps[0].x + steps[0].w/2)) * Math.tan(startPlateRotation);
         if (ball.x > steps[0].x + steps[0].w) { ball.onPlate = false; currentIdx = 1; }
     } else {
-        ball.vy += 0.48;
-        ball.x += ball.vx;
-        ball.y += ball.vy;
+        ball.vy += 0.48; ball.x += ball.vx; ball.y += ball.vy;
     }
 
-    // --- 核心修改：即時感應對齊 ---
+    // 即時修正邏輯 (僅在尚未儲存成功前有效)
     if (steps[currentIdx] && !ball.onPlate) {
         const target = steps[currentIdx];
-        
-        // 如果球的 y 快要到達或已經超過目標板子，但在還沒判定「徹底失敗」前
         if (ball.y > target.y - 100 && ball.vy > 0) {
-            // 即時調整 X 座標對齊球心
             const targetX = ball.x - target.w / 2;
-            
-            // 使用平滑移動，讓板子滑過去接球
-            target.x += (targetX - target.x) * 0.15; 
-            document.getElementById('realtimeX').innerText = Math.round(ball.x);
-            document.getElementById('fixState').innerText = "即時對齊中...";
+            target.x += (targetX - target.x) * 0.2; 
         }
-
-        // 徹底錯過判定：如果球掉得太深還沒接到
-        if (ball.y > target.y + 200) {
-            failAndRestart("完全錯過");
+        if (ball.y > target.y + 250) {
+            attempts++;
+            setTimeout(resetAndAutoStart, 300);
         }
     }
 
@@ -130,37 +169,23 @@ function update() {
         if (i === 0) return; 
         if (ball.x + ball.r > s.x && ball.x - ball.r < s.x + s.w &&
             ball.y + ball.r > s.y && ball.y - ball.r < s.y + s.h && ball.vy > 0) {
-            
             s.hitCount++;
-            // 處理重複彈跳：縮短當前板子並重來
             if (i === currentIdx && s.hitCount >= 2) {
-                s.w -= 20; s.x -= 5;
-                failAndRestart("重複彈跳修正");
+                s.w -= 15; s.x -= 5;
+                attempts++; setTimeout(resetAndAutoStart, 300);
                 return;
             }
-
             if (i === currentIdx) {
-                ball.y = s.y - ball.r;
-                ball.vy = -4.8; 
-                s.active = 15;
-                
-                if (audioCtx.state === 'suspended') audioCtx.resume();
-                const o = audioCtx.createOscillator();
-                const g = audioCtx.createGain();
-                o.type = 'sine'; o.frequency.value = s.freq;
-                g.gain.setValueAtTime(0.3, audioCtx.currentTime);
-                g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.4);
-                o.connect(g); g.connect(audioCtx.destination);
-                o.start(); o.stop(audioCtx.currentTime + 0.4);
-                
+                ball.y = s.y - ball.r; ball.vy = -4.8; s.active = 15;
+                playTone(s.freq);
                 currentIdx++;
-                document.getElementById('fixState').innerText = "穩定運行";
+                document.getElementById('targetNote').innerText = s.label;
             }
         }
     });
 
     if (currentIdx >= steps.length && steps.length > 1) {
-        addLog("<b style='color:#10b981'>✅ 即時演化成功！演奏路徑已優化。</b>");
+        saveTrackData(); // 成功後儲存
         ball = null;
     }
 
@@ -183,13 +208,7 @@ function draw() {
         } else {
             ctx.fillStyle = s.active > 0 ? '#fff' : s.color;
             if (s.active > 0) s.active--;
-            if (i === currentIdx) {
-                ctx.shadowBlur = 10; ctx.shadowColor = "#fbbf24";
-                ctx.strokeStyle = "#fbbf24"; ctx.lineWidth = 2;
-                ctx.strokeRect(s.x-2, s.y-2, s.w+4, s.h+4);
-            }
             ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, s.h, 6); ctx.fill();
-            ctx.shadowBlur = 0;
             ctx.fillStyle = "#fff"; ctx.font = "bold 14px monospace";
             ctx.fillText(s.label, s.x+10, s.y+18);
         }
@@ -205,7 +224,6 @@ function draw() {
     requestAnimationFrame(draw);
 }
 
-buildTrack(document.getElementById('notation').value);
 draw();
 </script>
 </body>
