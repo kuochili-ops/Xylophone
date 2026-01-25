@@ -2,21 +2,23 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴機 - 漸進式位移修正</title>
+    <title>AI 木琴機 - 微型漸進位移版</title>
     <style>
         body { margin: 0; background: #0f172a; color: #f8fafc; font-family: sans-serif; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; }
         .panel { position: fixed; top: 0; width: 100%; background: rgba(15, 23, 42, 0.9); padding: 15px; display: flex; gap: 10px; justify-content: center; z-index: 10; border-bottom: 2px solid #3b82f6; }
-        canvas { background: #020617; border-radius: 12px; box-shadow: 0 0 40px rgba(59, 130, 246, 0.2); }
-        .stats { position: fixed; top: 80px; right: 20px; background: rgba(30, 41, 59, 0.85); padding: 15px; border-radius: 8px; border: 1px solid #475569; font-family: monospace; }
+        canvas { background: #020617; border-radius: 12px; box-shadow: 0 0 50px rgba(59, 130, 246, 0.1); }
+        .stats { position: fixed; top: 80px; right: 20px; background: rgba(30, 41, 59, 0.9); padding: 15px; border-radius: 8px; border: 1px solid #475569; font-family: monospace; }
         .ai-log { position: fixed; bottom: 20px; left: 20px; width: 360px; max-height: 200px; overflow-y: auto; background: rgba(15, 23, 42, 0.95); padding: 12px; border-radius: 6px; color: #fbbf24; font-size: 12px; border-left: 4px solid #3b82f6; }
-        button { background: #3b82f6; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: bold; }
+        button { background: #3b82f6; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+        button:hover { background: #2563eb; }
+        button:disabled { background: #475569; cursor: not-allowed; }
         .highlight { color: #60a5fa; font-weight: bold; }
     </style>
 </head>
 <body>
 
 <div class="panel">
-    <strong>漸進修正模式：</strong>
+    <strong>微調模式 (X- 5px)：</strong>
     <input type="text" id="notation" value="1231 1231 345  345" size="35" style="padding:8px; background:#1e293b; color:white; border:1px solid #475569;">
     <button id="startBtn" onclick="triggerStart()">啟動旋轉</button>
 </div>
@@ -24,10 +26,10 @@
 <div class="stats">
     <div>嘗試次數: <span id="att">1</span></div>
     <div>目標音符: <span id="targetNote">-</span></div>
-    <div>修正狀態: <span id="fixState">監測中</span></div>
+    <div>微調精度: <b style="color:#10b981">5px</b></div>
 </div>
 
-<div class="ai-log" id="log">系統：就位完畢。</div>
+<div class="ai-log" id="log">系統：等待指令。</div>
 <canvas id="mainCanvas"></canvas>
 
 <script>
@@ -50,15 +52,15 @@ let startPlateRotation = 0;
 
 function addLog(msg) {
     const l = document.getElementById('log');
-    l.innerHTML = `<div>[試錯 ${attempts}] ${msg}</div>` + l.innerHTML;
+    l.innerHTML = `<div>[${attempts}] ${msg}</div>` + l.innerHTML;
 }
 
 function buildTrack(str) {
     steps = [];
-    // 0 號啟動板
+    // 0 號啟動板 - 置於中央最上方
     steps.push({ x: 100, y: 200, w: 150, h: 20, isStartPlate: true, label: "START", color: "#64748b", active: 0, hitCount: 0 });
 
-    let curX = 400, curY = 320; // 故意設遠一點讓它觸發漸進修正
+    let curX = 450, curY = 320; // 初始距離稍遠，讓 AI 慢慢修正過來
     let notes = [];
     for(let i=0; i<str.length; i++) {
         if(str[i]==='+') { notes.push('+'+str[i+1]); i++; }
@@ -76,11 +78,11 @@ function buildTrack(str) {
 function triggerStart() {
     isStarted = true;
     document.getElementById('startBtn').disabled = true;
-    document.getElementById('fixState').innerText = "演奏中";
 }
 
 function resetBall() {
     const startPlate = steps[0];
+    // 球置於 0 號板中軸
     ball = { x: startPlate.x + startPlate.w / 2, y: startPlate.y - 16, vx: 0, vy: 0, r: 15, onPlate: true };
     currentIdx = 0;
     startPlateRotation = 0;
@@ -95,38 +97,40 @@ function fail(reason, targetIdx) {
     
     if (target) {
         if (reason === "沒接到音符") {
-            // 關鍵修正：慢慢做 X 軸負向位移
-            target.x -= 15; // 每次失敗往左挪動 15px (可視為慢慢移動)
-            document.getElementById('fixState').innerText = "漸進修正 X- 中";
-            addLog(`🔧 <span class="highlight">正在將音階 [${target.label}] 慢慢向左 (X-) 挪動...</span>`);
+            // 依照指示：更低程度的位移，每次僅左移 5px
+            target.x -= 5; 
+            addLog(`🔧 <span class="highlight">微調：[${target.label}] 向左微移 5px</span>`);
         } else if (reason === "重複彈跳") {
-            // 針對當前板塊縮短
-            target.w -= 40;
-            target.x -= 10;
-            addLog(`🔧 縮短音階 [${target.label}] 長度`);
+            // 針對當前板塊：縮短長度與位置微調
+            target.w -= 20; // 縮短幅度也調小，更精準
+            target.x -= 5;
+            addLog(`🔧 修正：縮短音階 [${target.label}] 並微移`);
         }
     }
 
     attempts++;
     document.getElementById('att').innerText = attempts;
-    setTimeout(resetBall, 200); // 加快重啟速度
+    setTimeout(resetBall, 250);
 }
 
 function update() {
     if (!ball) return;
 
     if (isStarted && ball.onPlate) {
-        startPlateRotation += 0.012; 
-        ball.vx += Math.sin(startPlateRotation) * 0.45;
+        // 0 號啟動板旋轉
+        startPlateRotation += 0.01; 
+        ball.vx += Math.sin(startPlateRotation) * 0.4;
         ball.x += ball.vx;
+        // 計算旋轉後的 Y 偏移
         ball.y = steps[0].y - ball.r + (ball.x - (steps[0].x + steps[0].w/2)) * Math.tan(startPlateRotation);
 
         if (ball.x > steps[0].x + steps[0].w) {
             ball.onPlate = false;
             currentIdx = 1;
+            addLog("球落下，搜尋第一個音階...");
         }
     } else if (!ball.onPlate) {
-        ball.vy += 0.48;
+        ball.vy += 0.48; // Gravity
         ball.x += ball.vx;
         ball.y += ball.vy;
     }
@@ -162,10 +166,9 @@ function update() {
 
     if (!ball.onPlate && steps[currentIdx]) {
         const target = steps[currentIdx];
-        if (ball.x > target.x + target.w + 50 || ball.y > target.y + 350) fail("沒接到音符", currentIdx);
+        if (ball.x > target.x + target.w + 40 || ball.y > target.y + 350) fail("沒接到音符", currentIdx);
     } else if (currentIdx >= steps.length && steps.length > 1) {
-        addLog("<b style='color:#10b981'>✅ 完美演奏！座標已優化。</b>");
-        document.getElementById('fixState').innerText = "成功";
+        addLog("<b style='color:#10b981'>✅ 演化演奏成功！</b>");
         ball = null;
     }
 
@@ -186,12 +189,13 @@ function draw() {
             ctx.fillStyle = s.color;
             ctx.fillRect(-s.w/2, 0, s.w, s.h);
             ctx.fillStyle = "white";
+            ctx.font = "12px sans-serif";
             ctx.fillText(s.label, -20, 15);
         } else {
             ctx.fillStyle = s.active > 0 ? '#fff' : s.color;
             if (s.active > 0) s.active--;
             if (i === currentIdx) {
-                ctx.shadowBlur = 15; ctx.shadowColor = "#fbbf24";
+                ctx.shadowBlur = 10; ctx.shadowColor = "#fbbf24";
                 ctx.strokeStyle = "#fbbf24"; ctx.lineWidth = 2;
                 ctx.strokeRect(s.x-2, s.y-2, s.w+4, s.h+4);
             }
