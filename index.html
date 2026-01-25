@@ -2,157 +2,124 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴機 - 多媒體分享版</title>
+    <title>AI 木琴機 - 影音輸出版</title>
     <style>
-        body { margin: 0; background: #0f172a; color: #f8fafc; font-family: sans-serif; overflow: hidden; display: flex; flex-direction: column; height: 100vh; }
-        /* 背景層 */
-        #bgContainer { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: -1; background-size: cover; background-position: center; filter: blur(8px) brightness(0.4); transform: scale(1.1); transition: 0.5s; }
-        
-        .panel { background: rgba(15, 23, 42, 0.9); padding: 12px; display: flex; gap: 8px; justify-content: center; align-items: center; z-index: 100; border-bottom: 2px solid #3b82f6; flex-wrap: wrap; }
-        canvas { flex-grow: 1; }
-        
-        /* 留言框樣式 */
-        #messageBox { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(0.8); background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(20px); padding: 30px 50px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.2); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); display: none; text-align: center; z-index: 200; transition: 0.5s ease; }
-        #messageBox.show { display: block; transform: translate(-50%, -50%) scale(1); }
-        #messageText { font-size: 2em; font-weight: bold; color: #fff; text-shadow: 0 2px 10px rgba(0,0,0,0.5); }
-
-        .btn-rec { background: #f43f5e !important; animation: pulse 2s infinite; }
-        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
-        
-        button { border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer; font-weight: bold; color: white; background: #3b82f6; }
+        body { margin: 0; background: #000; color: #fff; font-family: sans-serif; overflow: hidden; display: flex; flex-direction: column; height: 100vh; }
+        .panel { background: rgba(15, 23, 42, 0.95); padding: 12px; display: flex; gap: 8px; justify-content: center; align-items: center; z-index: 100; border-bottom: 2px solid #3b82f6; }
+        canvas { flex-grow: 1; width: 100%; height: 100%; }
+        button { border: none; padding: 8px 15px; border-radius: 6px; cursor: pointer; font-weight: bold; color: white; background: #3b82f6; }
+        .btn-rec { background: #ef4444 !important; }
         input, select { padding: 8px; background: #1e293b; color: white; border: 1px solid #475569; border-radius: 4px; }
+        #statusOverlay { position: fixed; bottom: 20px; right: 20px; padding: 10px; background: rgba(0,0,0,0.7); border-radius: 5px; font-family: monospace; font-size: 12px; pointer-events: none; }
     </style>
 </head>
 <body>
 
-<div id="bgContainer"></div>
-
 <div class="panel">
     <input type="file" id="bgUpload" accept="image/*" style="display:none" onchange="handleBg(this)">
-    <button onclick="document.getElementById('bgUpload').click()" style="background:#6366f1">🖼️ 更換背景</button>
-    
-    <select id="songSelect" onchange="syncSong()">
-        <option value="1231 1231 345  345">兩隻老虎</option>
-        <option value="1155665 4433221">小星星</option>
-        <option value="custom">自定義...</option>
-    </select>
-    <input type="text" id="notation" value="1231 1231 345  345" size="20">
-    <input type="text" id="endMsg" placeholder="演奏後的留言..." value="太棒了！練習成功 🎶">
-    
-    <button onclick="startEngine(false)">訓練/演奏</button>
-    <button id="replayBtn" style="display:none; background:#10b981" onclick="startEngine(true)">重播完美版</button>
-    <button id="recBtn" class="btn-rec" onclick="toggleRecording()" style="display:none">🔴 開始錄影分享</button>
+    <button onclick="document.getElementById('bgUpload').click()" style="background:#6366f1">🖼️ 設定背景</button>
+    <input type="text" id="notation" value="1155665 4433221" size="15">
+    <input type="text" id="endMsg" placeholder="留言內容" value="祝你天天開心 🎶">
+    <button onclick="startEngine(false)">訓練</button>
+    <button id="replayBtn" style="display:none; background:#10b981" onclick="startEngine(true)">演奏</button>
+    <button id="recBtn" class="btn-rec" style="display:none" onclick="startRecording()">🔴 錄製並分享影片</button>
 </div>
 
-<div id="messageBox">
-    <div id="messageText"></div>
-    <button onclick="closeMsg()" style="margin-top:20px; background:rgba(255,255,255,0.2)">關閉</button>
-</div>
-
+<div id="statusOverlay">等待中...</div>
 <canvas id="mainCanvas"></canvas>
 
 <script>
 const canvas = document.getElementById('mainCanvas');
 const ctx = canvas.getContext('2d');
-let audioCtx = null, recorder = null, chunks = [];
+let audioCtx = null, streamDest = null, recorder = null, chunks = [];
+let bgImg = null;
 
 const freqMap = { '1': 261.6, '2': 293.7, '3': 329.6, '4': 349.2, '5': 392.0, '6': 440.0, '7': 493.9, '+1': 523.3 };
 let steps = [], ball = null, camera = { x: 0, y: 0 }, currentIdx = 0, isStarted = false, isReplay = false, rot = 0;
+let showMsgTicks = 0;
 
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
-// 背景上傳處理
 function handleBg(input) {
     if (input.files && input.files[0]) {
         const reader = new FileReader();
-        reader.onload = e => document.getElementById('bgContainer').style.backgroundImage = `url(${e.target.result})`;
+        reader.onload = e => {
+            bgImg = new Image();
+            bgImg.src = e.target.result;
+        };
         reader.readAsDataURL(input.files[0]);
     }
 }
 
-function syncSong() {
-    const s = document.getElementById('songSelect');
-    if(s.value !== "custom") document.getElementById('notation').value = s.value;
-    updateUI();
-}
-
 function updateUI() {
-    const key = 'v6_' + document.getElementById('notation').value;
-    const saved = localStorage.getItem(key);
+    const saved = localStorage.getItem('v7_' + document.getElementById('notation').value);
     document.getElementById('replayBtn').style.display = saved ? "inline-block" : "none";
     document.getElementById('recBtn').style.display = saved ? "inline-block" : "none";
 }
 
 function startEngine(replayMode) {
-    closeMsg();
-    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    isStarted = false; ball = null; isReplay = replayMode; currentIdx = 0;
+    if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        streamDest = audioCtx.createMediaStreamDestination();
+    }
+    isStarted = false; ball = null; isReplay = replayMode; currentIdx = 0; showMsgTicks = 0;
     
-    const key = 'v6_' + document.getElementById('notation').value;
+    const key = 'v7_' + document.getElementById('notation').value;
     const saved = localStorage.getItem(key);
 
     if (isReplay && saved) {
         steps = JSON.parse(saved);
     } else {
-        steps = [{ x: 100, y: 200, w: 150, h: 20, label: "START", color: "#64748b", active: 0, hitCount: 0 }];
+        steps = [{ x: 100, y: 200, w: 150, h: 20, label: "START", color: "#64748b", active: 0 }];
         let cx = 550, cy = 300;
         const notes = document.getElementById('notation').value.match(/\+?\d| /g) || [];
         notes.forEach(n => {
             if (n === ' ') { cx += 150; cy += 80; }
             else if (freqMap[n]) {
-                steps.push({ x: cx, y: cy, freq: freqMap[n], label: n, w: 120, h: 25, active: 0, hitCount: 0, color: `hsl(${(steps.length*50)%360},60%,60%)` });
+                steps.push({ x: cx, y: cy, freq: freqMap[n], label: n, w: 120, h: 25, active: 0, color: `hsl(${(steps.length*50)%360},60%,60%)` });
                 cx += 160; cy += 40;
             }
         });
     }
-    
-    setTimeout(() => {
-        ball = { x: steps[0].x + 75, y: steps[0].y - 15, vx: 0, vy: 0, r: 12, on: true };
-        rot = 0; isStarted = true;
-    }, 100);
+    ball = { x: steps[0].x + 75, y: steps[0].y - 15, vx: 0, vy: 0, r: 12, on: true };
+    rot = 0; isStarted = true;
 }
 
-// 錄影功能
-function toggleRecording() {
-    if (recorder && recorder.state === "recording") {
-        recorder.stop();
-        document.getElementById('recBtn').innerText = "🔴 開始錄影分享";
-    } else {
-        chunks = [];
-        const stream = canvas.captureStream(30);
-        // 嘗試加入音訊流（如果有的話）
-        recorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
-        recorder.ondataavailable = e => chunks.push(e.data);
-        recorder.onstop = () => {
-            const blob = new Blob(chunks, { type: 'video/webm' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url; a.download = '木琴演奏分享.webm'; a.click();
-        };
-        recorder.start();
-        document.getElementById('recBtn').innerText = "⏹️ 停止並下載影片";
-        startEngine(true); // 錄影時自動啟動重播
-    }
+function startRecording() {
+    chunks = [];
+    const videoStream = canvas.captureStream(30);
+    const combinedStream = new MediaStream([
+        ...videoStream.getVideoTracks(),
+        ...streamDest.stream.getAudioTracks()
+    ]);
+
+    recorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm;codecs=vp9' });
+    recorder.ondataavailable = e => chunks.push(e.data);
+    recorder.onstop = () => {
+        const blob = new Blob(chunks, { type: 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = `木琴演奏_${new Date().getTime()}.webm`; a.click();
+        document.getElementById('statusOverlay').innerText = "✅ 錄製完成已下載";
+    };
+
+    recorder.start();
+    document.getElementById('statusOverlay').innerText = "🔴 錄製影音中...";
+    startEngine(true);
 }
 
 function play(f) {
     const o = audioCtx.createOscillator(), g = audioCtx.createGain();
     o.type = 'sine'; o.frequency.setValueAtTime(f, audioCtx.currentTime);
     g.gain.setValueAtTime(0, audioCtx.currentTime);
-    g.gain.linearRampToValueAtTime(0.4, audioCtx.currentTime+0.01);
-    g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime+0.4);
-    o.connect(g); g.connect(audioCtx.destination);
-    o.start(); o.stop(audioCtx.currentTime+0.5);
+    g.gain.linearRampToValueAtTime(0.5, audioCtx.currentTime+0.01);
+    g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime+0.5);
+    o.connect(g); 
+    g.connect(audioCtx.destination);
+    g.connect(streamDest); // 同時輸出到錄影機
+    o.start(); o.stop(audioCtx.currentTime+0.6);
 }
-
-function showEndMsg() {
-    const msg = document.getElementById('endMsg').value;
-    document.getElementById('messageText').innerText = msg;
-    document.getElementById('messageBox').classList.add('show');
-}
-
-function closeMsg() { document.getElementById('messageBox').classList.remove('show'); }
 
 function update() {
     if (!isStarted || !ball) return;
@@ -181,11 +148,11 @@ function update() {
 
     if (currentIdx >= steps.length) {
         if (!isReplay) {
-            localStorage.setItem('v6_' + document.getElementById('notation').value, JSON.stringify(steps));
+            localStorage.setItem('v7_' + document.getElementById('notation').value, JSON.stringify(steps));
             updateUI();
         }
-        showEndMsg();
         isStarted = false; ball = null;
+        showMsgTicks = 180; // 顯示留言 3 秒 (60fps * 3)
     }
 
     camera.x += ( (ball?ball.x:steps[0].x) - canvas.width/3 - camera.x) * 0.1;
@@ -193,8 +160,20 @@ function update() {
 }
 
 function draw() {
-    ctx.clearRect(0,0,canvas.width,canvas.height);
+    // 1. 繪製背景 (包含上傳的照片)
+    ctx.fillStyle = "#020617";
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    if (bgImg) {
+        const scale = Math.max(canvas.width / bgImg.width, canvas.height / bgImg.height);
+        const w = bgImg.width * scale, h = bgImg.height * scale;
+        ctx.save();
+        ctx.globalAlpha = 0.4; // 背景透明度
+        ctx.drawImage(bgImg, (canvas.width-w)/2, (canvas.height-h)/2, w, h);
+        ctx.restore();
+    }
+
     ctx.save(); ctx.translate(-camera.x, -camera.y);
+    // 2. 繪製音板
     steps.forEach((s, i) => {
         ctx.save();
         if (i === 0) {
@@ -206,8 +185,27 @@ function draw() {
         }
         ctx.restore();
     });
+    // 3. 繪製球
     if (ball) { ctx.fillStyle = "#ef4444"; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2); ctx.fill(); }
-    ctx.restore(); update(); requestAnimationFrame(draw);
+    ctx.restore();
+
+    // 4. 繪製結束留言 (Canvas 版，確保錄得到)
+    if (showMsgTicks > 0) {
+        showMsgTicks--;
+        const alpha = Math.min(1, showMsgTicks / 30);
+        ctx.fillStyle = `rgba(30, 41, 59, ${0.8 * alpha})`;
+        ctx.roundRect(canvas.width/2-150, canvas.height/2-50, 300, 100, 15); ctx.fill();
+        ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+        ctx.font = "bold 20px sans-serif"; ctx.textAlign = "center";
+        ctx.fillText(document.getElementById('endMsg').value, canvas.width/2, canvas.height/2 + 8);
+        
+        // 留言顯示結束後，自動停止錄影
+        if (showMsgTicks === 1 && recorder && recorder.state === "recording") {
+            recorder.stop();
+        }
+    }
+
+    update(); requestAnimationFrame(draw);
 }
 
 updateUI(); draw();
