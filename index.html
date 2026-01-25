@@ -2,24 +2,28 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴機 - 快節奏優化版</title>
+    <title>AI 木琴機 - 專業快板調整版</title>
     <style>
         body { margin: 0; background: #000; color: #fff; font-family: sans-serif; overflow: hidden; display: flex; flex-direction: column; height: 100vh; }
-        .panel { background: rgba(15, 23, 42, 0.95); padding: 12px; display: flex; gap: 8px; justify-content: center; align-items: center; z-index: 100; border-bottom: 2px solid #3b82f6; }
+        .panel { background: rgba(15, 23, 42, 0.95); padding: 12px; display: flex; gap: 8px; justify-content: center; align-items: center; z-index: 100; border-bottom: 2px solid #3b82f6; flex-wrap: wrap; }
         canvas { flex-grow: 1; width: 100%; height: 100%; }
         button { border: none; padding: 10px 18px; border-radius: 6px; cursor: pointer; font-weight: bold; color: white; background: #3b82f6; }
         .btn-rec { background: #ef4444 !important; }
-        input { padding: 10px; background: #1e293b; color: white; border: 1px solid #475569; border-radius: 4px; }
+        .config-group { display: flex; align-items: center; gap: 4px; font-size: 12px; color: #94a3b8; }
+        input[type="text"] { padding: 8px; background: #1e293b; color: white; border: 1px solid #475569; border-radius: 4px; }
     </style>
 </head>
 <body>
 
 <div class="panel">
-    <input type="text" id="notation" value="1234567+1 7654321" size="25">
-    <input type="text" id="endMsg" value="極速演奏挑戰成功！">
-    <button onclick="startEngine(false)">訓練模式</button>
-    <button id="replayBtn" style="display:none; background:#10b981" onclick="startEngine(true)">直接演奏</button>
-    <button id="recBtn" class="btn-rec" style="display:none" onclick="startRecording()">🔴 錄影</button>
+    <input type="text" id="notation" value="+5+4#+5+4#+5 7+4+2+1" size="20">
+    <div class="config-group">
+        高度:<input type="number" id="hConf" value="180" style="width:50px">
+        斜率:<input type="number" id="sConf" value="0.025" step="0.005" style="width:60px">
+        寬度:<input type="number" id="wConf" value="100" style="width:50px">
+    </div>
+    <button onclick="startEngine(false)">訓練</button>
+    <button id="recBtn" class="btn-rec" style="display:none" onclick="startRecording()">🔴 錄製快板</button>
 </div>
 
 <canvas id="mainCanvas"></canvas>
@@ -29,110 +33,84 @@ const canvas = document.getElementById('mainCanvas');
 const ctx = canvas.getContext('2d');
 let audioCtx = null, streamDest = null, recorder = null, chunks = [];
 
-const freqMap = { '1': 261.6, '2': 293.7, '3': 329.6, '4': 349.2, '5': 392.0, '6': 440.0, '7': 493.9, '+1': 523.3 };
-let steps = [], ball = null, camera = { x: 0, y: 0 }, currentIdx = 0, isStarted = false, isReplay = false, rot = 0;
-let postRollTicks = 0;
+const freqMap = { '1': 261.6, '2': 293.7, '3': 329.6, '4': 349.2, '5': 392.0, '6': 440.0, '7': 493.9, '+1': 523.3, '+2': 587.3, '+3': 659.3, '+4': 698.5, '+4#': 740, '+5': 784 };
+let steps = [], ball = null, camera = { x: 0, y: 0 }, currentIdx = 0, isStarted = false, isReplay = false, rot = 0, postRollTicks = 0;
 
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
-function updateUI() {
-    const key = 'v11_' + document.getElementById('notation').value;
-    const saved = localStorage.getItem(key);
-    document.getElementById('replayBtn').style.display = saved ? "inline-block" : "none";
-    document.getElementById('recBtn').style.display = saved ? "inline-block" : "none";
-}
-
 function startEngine(replayMode) {
     if (!audioCtx) {
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        audioCtx = new AudioContext();
         streamDest = audioCtx.createMediaStreamDestination();
     }
+    const h = parseFloat(document.getElementById('hConf').value);
+    const w = parseFloat(document.getElementById('wConf').value);
+    
     isStarted = false; ball = null; isReplay = replayMode; currentIdx = 0; postRollTicks = 0;
     
-    const key = 'v11_' + document.getElementById('notation').value;
+    const key = 'v12_' + document.getElementById('notation').value;
     const saved = localStorage.getItem(key);
 
     if (isReplay && saved) {
         steps = JSON.parse(saved);
     } else {
-        steps = [{ x: 100, y: 200, w: 160, h: 20, label: "START", color: "#64748b", active: 0 }];
-        let cx = 400, cy = 300;
-        const notes = document.getElementById('notation').value.match(/\+?\d| /g) || [];
+        steps = [{ x: 100, y: 300, w: 160, h: 20, label: "START", color: "#64748b", active: 0 }];
+        let cx = 400, cy = 400;
+        const notes = document.getElementById('notation').value.match(/\+?\d#?| /g) || [];
         notes.forEach(n => {
-            if (n === ' ') { cx += 120; cy += 60; } // 縮短快節奏時的間距
+            if (n === ' ') { cx += 120; cy += 60; }
             else if (freqMap[n]) {
-                steps.push({ x: cx, y: cy, freq: freqMap[n], label: n, w: 110, h: 20, active: 0, color: `hsl(${(steps.length*40)%360},60%,60%)` });
-                cx += 140; cy += 35; // 讓音板靠更近，減少球在空中飛行的路程
+                steps.push({ x: cx, y: cy, freq: freqMap[n], label: n, w: w, h: 20, active: 0, color: `hsl(${(steps.length*40)%360},60%,60%)` });
+                cx += (w + 40); cy += 30; // 快板佈局
             }
         });
     }
-    ball = { x: steps[0].x + 80, y: steps[0].y - 15, vx: 0, vy: 0, r: 10, on: true };
+    ball = { x: steps[0].x + 80, y: steps[0].y - h, vx: 0, vy: 0, r: 10, on: true };
     rot = 0; isStarted = true;
-}
-
-function startRecording() {
-    chunks = [];
-    const videoStream = canvas.captureStream(30);
-    const combinedStream = new MediaStream([...videoStream.getVideoTracks(), ...streamDest.stream.getAudioTracks()]);
-    recorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm' });
-    recorder.ondataavailable = e => chunks.push(e.data);
-    recorder.onstop = () => {
-        const blob = new Blob(chunks, { type: 'video/webm' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = `Fast_Performance.webm`; a.click();
-    };
-    recorder.start(); startEngine(true);
+    document.getElementById('recBtn').style.display = "inline-block";
 }
 
 function play(f) {
     const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-    o.type = 'triangle'; // 使用更清脆的波形適合快節奏
+    o.type = 'triangle';
     o.frequency.setValueAtTime(f, audioCtx.currentTime);
     g.gain.setValueAtTime(0, audioCtx.currentTime);
     g.gain.linearRampToValueAtTime(0.4, audioCtx.currentTime+0.005);
-    g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime+0.2); // 縮短音效衰減，避免重疊混亂
+    g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime+0.2);
     o.connect(g); g.connect(audioCtx.destination); g.connect(streamDest);
     o.start(); o.stop(audioCtx.currentTime+0.3);
 }
 
 function update() {
     if (!isStarted || !ball) return;
+    const slope = parseFloat(document.getElementById('sConf').value);
+    
     if (ball.on) {
-        rot += 0.018; // 加強初始動力
-        ball.vx += Math.sin(rot) * 0.55; ball.x += ball.vx;
-        ball.y = steps[0].y - ball.r + (ball.x - (steps[0].x+80)) * Math.tan(rot);
+        rot += slope; // 斜率影響初始速度
+        ball.vx += Math.sin(rot) * 0.6; ball.x += ball.vx;
+        ball.y = (steps[0].y - (parseFloat(document.getElementById('hConf').value)/5)) + (ball.x - (steps[0].x+80)) * Math.tan(rot);
         if (ball.x > steps[0].x + steps[0].w) { ball.on = false; currentIdx = 1; }
     } else {
-        ball.vy += 0.65; // 增加重力，讓球落得更快，拍子更緊湊
+        ball.vy += 0.7; // 重力固定加強，確保留言前拍子緊湊
         ball.x += ball.vx; ball.y += ball.vy;
     }
 
     const t = steps[currentIdx];
     if (t && !ball.on) {
-        if (!isReplay && ball.y > t.y - 200 && ball.vy > 0) {
-            t.x += (ball.x - t.w/2 - t.x) * 0.6; // AI 反應速度提升
-        }
+        if (!isReplay && ball.y > t.y - 200 && ball.vy > 0) t.x += (ball.x - t.w/2 - t.x) * 0.55;
         if (ball.y > t.y + 400) startEngine(false);
     }
 
     steps.forEach((s, i) => {
         if (i > 0 && ball && ball.x + ball.r > s.x && ball.x - ball.r < s.x + s.w &&
             ball.y + ball.r > s.y && ball.y - ball.r < s.y + s.h && ball.vy > 0) {
-            if (i === currentIdx) {
-                ball.y = s.y - ball.r; 
-                ball.vy = -6.5; // 增加反彈高度，確保能跳到下一個位置
-                s.active = 10; play(s.freq); currentIdx++;
-            }
+            if (i === currentIdx) { ball.y = s.y - ball.r; ball.vy = -6.8; s.active = 10; play(s.freq); currentIdx++; }
         }
     });
 
     if (currentIdx >= steps.length) {
-        if (!isReplay) {
-            localStorage.setItem('v11_' + document.getElementById('notation').value, JSON.stringify(steps));
-            updateUI();
-        }
+        if (!isReplay) localStorage.setItem('v12_' + document.getElementById('notation').value, JSON.stringify(steps));
         isStarted = false; ball = null; postRollTicks = 120;
     }
 
@@ -145,19 +123,17 @@ function draw() {
     ctx.save(); ctx.translate(-camera.x, -camera.y);
     steps.forEach((s, i) => {
         ctx.fillStyle = s.active > 0 ? '#fff' : s.color; if(s.active>0) s.active--;
-        ctx.beginPath(); 
         if(i===0) { ctx.save(); ctx.translate(s.x+s.w/2, s.y); ctx.rotate(rot); ctx.fillRect(-s.w/2, 0, s.w, s.h); ctx.restore(); }
-        else { ctx.roundRect(s.x, s.y, s.w, s.h, 6); ctx.fill(); }
+        else { ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, s.h, 6); ctx.fill(); }
     });
     
-    // 結尾大字
+    // 大字留言板 (錨定在結尾音)
     if (!ball && steps.length > 1) {
-        const msg = document.getElementById('endMsg').value;
         const last = steps[steps.length-1];
-        ctx.font = "bold 32px sans-serif";
-        ctx.fillStyle = "rgba(15, 23, 42, 0.9)";
-        ctx.roundRect(last.x-100, last.y+60, 400, 80, 15); ctx.fill();
-        ctx.fillStyle = "#fff"; ctx.fillText(msg, last.x - 50, last.y + 110);
+        ctx.fillStyle = "rgba(15, 23, 42, 0.95)";
+        ctx.beginPath(); ctx.roundRect(last.x-100, last.y+80, 400, 90, 20); ctx.fill();
+        ctx.fillStyle = "#fff"; ctx.font = "bold 32px sans-serif"; ctx.textAlign = "center";
+        ctx.fillText("精彩快板，錄製成功！", last.x + 100, last.y + 135);
     }
 
     if (ball) { ctx.fillStyle = "#ef4444"; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2); ctx.fill(); }
@@ -165,7 +141,19 @@ function draw() {
     if (postRollTicks > 0) { postRollTicks--; if (postRollTicks === 1 && recorder && recorder.state === "recording") recorder.stop(); }
     update(); requestAnimationFrame(draw);
 }
-updateUI(); draw();
+
+function startRecording() {
+    chunks = [];
+    const combinedStream = new MediaStream([...canvas.captureStream(30).getVideoTracks(), ...streamDest.stream.getAudioTracks()]);
+    recorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm' });
+    recorder.ondataavailable = e => chunks.push(e.data);
+    recorder.onstop = () => {
+        const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(chunks, { type: 'video/webm' }));
+        a.download = `Fast_Xylophone.webm`; a.click();
+    };
+    recorder.start(); startEngine(true);
+}
+draw();
 </script>
 </body>
 </html>
