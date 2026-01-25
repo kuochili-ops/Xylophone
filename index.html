@@ -2,25 +2,31 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 自我修正與進化木琴機</title>
+    <title>AI 逐音修正木琴演奏機</title>
     <style>
-        body { margin: 0; background: #0f172a; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; overflow: hidden; color: #f8fafc; font-family: sans-serif; }
-        .panel { position: fixed; top: 0; left: 0; right: 0; background: rgba(15, 23, 42, 0.9); padding: 15px; display: flex; gap: 10px; justify-content: center; z-index: 100; border-bottom: 1px solid #334155; }
-        canvas { background: #020617; border-radius: 12px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
-        input, button { padding: 10px; border-radius: 6px; border: 1px solid #475569; background: #1e293b; color: white; }
-        button { background: #10b981; border: none; cursor: pointer; font-weight: bold; }
-        .log { position: fixed; bottom: 20px; left: 20px; color: #fbbf24; font-family: monospace; font-size: 12px; max-height: 100px; overflow: hidden; }
+        body { margin: 0; background: #0f172a; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; color: #f8fafc; font-family: sans-serif; overflow: hidden; }
+        .panel { position: fixed; top: 0; left: 0; right: 0; background: rgba(15, 23, 42, 0.9); padding: 15px; display: flex; gap: 10px; justify-content: center; z-index: 100; border-bottom: 2px solid #3b82f6; }
+        canvas { background: #020617; border-radius: 12px; }
+        .stats { position: fixed; right: 20px; top: 80px; background: rgba(0,0,0,0.7); padding: 15px; border-radius: 8px; border: 1px solid #444; font-family: monospace; }
+        .log { position: fixed; bottom: 20px; left: 20px; color: #fbbf24; font-size: 13px; max-height: 150px; overflow-y: auto; width: 300px; }
+        .highlight { color: #10b981; font-weight: bold; }
     </style>
 </head>
 <body>
 
 <div class="panel">
-    <strong>物理進化模式：</strong>
-    <input type="text" id="customInput" value="1231 1231 345  345" size="40">
-    <button onclick="applyAndPlay()">開始演奏 (具備自我修復)</button>
+    <strong>AI 訓練模式：</strong>
+    <input type="text" id="customInput" value="1231 1231 345  345" size="40" style="padding:8px; border-radius:4px; background:#1e293b; color:white; border:1px solid #444;">
+    <button onclick="applyAndPlay()" style="background:#3b82f6; color:white; border:none; padding:8px 16px; border-radius:4px; cursor:pointer;">開始訓練</button>
 </div>
 
-<div class="log" id="systemLog">系統日誌：等待啟動...</div>
+<div class="stats" id="statsBox">
+    <div>嘗試次數: <span id="attemptCount">1</span></div>
+    <div>目前進度: <span id="currentProgress">0</span> / <span id="totalNotes">0</span></div>
+    <div>修正狀態: <span id="fixStatus">偵測中</span></div>
+</div>
+
+<div class="log" id="systemLog">系統：等待指令...</div>
 <canvas id="xloCanvas"></canvas>
 
 <script>
@@ -36,17 +42,19 @@ const freqMap = { '1': 261.6, '2': 293.7, '3': 329.6, '4': 349.2, '5': 392.0, '6
 let steps = [];
 let ball = null;
 let camera = { x: 0, y: 0 };
+let currentNoteIndex = 0;
+let attempts = 1;
 const GRAVITY = 0.45;
-const TARGET_VX = 5.2;
+const VX = 5;
 
 function log(msg) {
     const el = document.getElementById('systemLog');
-    el.innerHTML = msg + "<br>" + el.innerHTML;
+    el.innerHTML = `[${new Date().toLocaleTimeString()}] ${msg}<br>` + el.innerHTML;
 }
 
 function buildTrack(notation) {
     steps = [];
-    let curX = 150, curY = 200;
+    let curX = 200, curY = 200;
     let notationArray = [];
     for(let i=0; i<notation.length; i++) {
         if(notation[i]==='+') { notationArray.push('+'+notation[i+1]); i++; }
@@ -54,24 +62,63 @@ function buildTrack(notation) {
     }
 
     notationArray.forEach((n, idx) => {
-        if (n === ' ') { curX += 160; curY += 85; }
+        if (n === ' ') { curX += 160; curY += 80; }
         else if (freqMap[n]) {
-            let spaceCount = 0;
-            let j = idx + 1;
-            while (j < notationArray.length && notationArray[j] === ' ') { spaceCount++; j++; }
-            
             steps.push({
                 x: curX, y: curY, freq: freqMap[n], label: n,
-                w: 120 + (spaceCount * 150), h: 25,
-                active: 0, 
-                hitCount: 0, // 記錄擊中次數
-                lastHitTime: 0,
-                color: `hsl(${(steps.length * 50) % 360}, 60%, 50%)`
+                w: 120, h: 25, active: 0,
+                color: `hsl(${(steps.length * 40) % 360}, 60%, 50%)`
             });
-            curX += 160 * (1 + spaceCount);
-            curY += 45 + (spaceCount * 70);
+            curX += 160; curY += 45;
         }
     });
+    document.getElementById('totalNotes').innerText = steps.length;
+}
+
+function playNote(f) {
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = 'sine'; o.frequency.value = f;
+    g.gain.setValueAtTime(0.4, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.4);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime + 0.4);
+}
+
+function applyAndPlay() {
+    buildTrack(document.getElementById('customInput').value);
+    resetBall();
+}
+
+function resetBall() {
+    ball = { x: 50, y: 150, vx: VX, vy: 0, r: 15 };
+    currentNoteIndex = 0;
+    camera = { x: 0, y: 0 };
+}
+
+function failAndFix(reason) {
+    log(`<span style="color:#ef4444">❌ 失敗：${reason}</span>`);
+    document.getElementById('fixStatus').innerText = "修正軌道中...";
+    
+    // 修正邏輯：針對當前目標音符（或前一個音符）進行物理調整
+    if (steps[currentNoteIndex]) {
+        const target = steps[currentNoteIndex];
+        if (reason === "錯過音符") {
+            // 如果球掉太深接不到，就把目標音符往球的方向靠攏（修正落差）
+            target.y -= 30;
+            target.x -= 20;
+            log(`🔧 修正音符 [${target.label}]：提高位置並縮短距離`);
+        } else if (reason === "卡在音階") {
+            // 如果重複跳動，縮短板子寬度
+            target.w -= 30;
+            log(`🔧 修正音符 [${target.label}]：縮短板子寬度防止受困`);
+        }
+    }
+
+    attempts++;
+    document.getElementById('attemptCount').innerText = attempts;
+    setTimeout(resetBall, 500); // 稍微停頓後重頭再來
 }
 
 function update() {
@@ -84,57 +131,39 @@ function update() {
         if (ball.x + ball.r > s.x && ball.x - ball.r < s.x + s.w &&
             ball.y + ball.r > s.y && ball.y - ball.r < s.y + s.h && ball.vy > 0) {
             
-            const now = Date.now();
-            if (now - s.lastHitTime > 150) {
-                s.hitCount++;
-                s.lastHitTime = now;
-                
-                // --- 自我察覺與修正邏輯 ---
-                if (s.hitCount >= 2) {
-                    log(`⚠️ 偵測到重複跳動於 [${s.label}]，正在修正軌道...`);
-                    
-                    // 1. 修正長度：如果一直跳，就把板子縮短，讓球掉下去
-                    s.w -= 40; 
-                    
-                    // 2. 修正高度：如果下一個音階存在，降低下一個音階的高度，確保能接到
-                    if (steps[idx+1]) {
-                        steps[idx+1].y -= 20; 
-                        log(`🔧 已降低下一音階 [${steps[idx+1].label}] 高度`);
-                    }
+            // 如果撞擊的不是「下一個應該撞擊的音符」，也算失敗
+            if (idx !== currentNoteIndex && idx < currentNoteIndex) {
+                 // 重複撞到舊音符，修正
+                 failAndFix("卡在音階");
+                 return;
+            }
 
-                    // 3. 強制推進：給予額外的水平衝量
-                    ball.vx += 1.5;
-                }
-
-                // 正常彈跳
-                ball.y = s.y - ball.r;
-                ball.vy = -4.8; 
-                s.active = 20;
-                playNote(s.freq);
+            ball.y = s.y - ball.r;
+            ball.vy = -5; // 固定推力
+            s.active = 15;
+            playNote(s.freq);
+            
+            if (idx === currentNoteIndex) {
+                currentNoteIndex++;
+                document.getElementById('currentProgress').innerText = currentNoteIndex;
+                document.getElementById('fixStatus').innerText = "正常演奏中";
             }
         }
     });
 
-    // 攝影機平滑跟隨
+    // 判定錯過音符：如果球的 X 座標已經超過了目標音符的 X，且 Y 已經掉下去
+    if (steps[currentNoteIndex]) {
+        const target = steps[currentNoteIndex];
+        if (ball.x > target.x + target.w + 50 || ball.y > target.y + 200) {
+            failAndFix("錯過音符");
+        }
+    } else if (currentNoteIndex >= steps.length) {
+        log("<span class='highlight'>✅ 成功！全曲演奏完畢且無修正需求。</span>");
+        ball = null;
+    }
+
     camera.x += (ball.x - canvas.width/3 - camera.x) * 0.1;
     camera.y += (ball.y - canvas.height/2 - camera.y) * 0.1;
-
-    // 掉落過深重置
-    if (steps.length > 0 && ball.y > steps[steps.length-1].y + 1000) {
-        log("🔄 歌曲結束或球已掉落，重置中...");
-        applyAndPlay(); 
-    }
-}
-
-function playNote(f) {
-    if (audioCtx.state === 'suspended') audioCtx.resume();
-    const o = audioCtx.createOscillator();
-    const g = audioCtx.createGain();
-    o.type = 'sine'; o.frequency.value = f;
-    g.gain.setValueAtTime(0.4, audioCtx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
-    o.connect(g); g.connect(audioCtx.destination);
-    o.start(); o.stop(audioCtx.currentTime + 0.5);
 }
 
 function draw() {
@@ -142,32 +171,32 @@ function draw() {
     ctx.save();
     ctx.translate(-camera.x, -camera.y);
 
-    steps.forEach(s => {
+    steps.forEach((s, i) => {
+        // 畫出目前的目標音符提示
+        if (i === currentNoteIndex) {
+            ctx.strokeStyle = "#fbbf24";
+            ctx.lineWidth = 3;
+            ctx.strokeRect(s.x - 5, s.y - 5, s.w + 10, s.h + 10);
+        }
+
         ctx.fillStyle = s.active > 0 ? '#fff' : s.color;
-        if (s.active > 0) s.active -= 2;
+        if (s.active > 0) s.active--;
         ctx.beginPath();
-        ctx.roundRect(s.x, s.y, s.w, s.h, 8);
+        ctx.roundRect(s.x, s.y, s.w, s.h, 6);
         ctx.fill();
         ctx.fillStyle = "white";
-        ctx.fillText(s.label, s.x + 10, s.y + 18);
+        ctx.font = "bold 14px monospace";
+        ctx.fillText(s.label, s.x + 10, s.y + 16);
     });
 
     if (ball) {
         ctx.fillStyle = "#ff4757";
-        ctx.beginPath();
-        ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2);
-        ctx.fill();
+        ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2); ctx.fill();
     }
 
     ctx.restore();
     update();
     requestAnimationFrame(draw);
-}
-
-function applyAndPlay() {
-    log("🚀 鋪設新軌道，發射球...");
-    buildTrack(document.getElementById('customInput').value);
-    ball = { x: 50, y: 150, vx: TARGET_VX, vy: 0, r: 15 };
 }
 
 applyAndPlay();
