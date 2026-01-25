@@ -2,99 +2,135 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴機 2.0 - 多軌並行</title>
+    <title>AI 木琴機 2.0 - 多軌階梯演奏</title>
     <style>
-        body { margin: 0; background: #001; color: #fff; font-family: sans-serif; overflow: hidden; }
-        .ui { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; z-index: 100; background: rgba(0,0,0,0.8); padding: 10px; border-radius: 10px; border: 1px solid #3b82f6; }
-        button { padding: 8px 15px; border-radius: 5px; border: none; background: #3b82f6; color: white; font-weight: bold; cursor: pointer; }
-        canvas { display: block; }
+        body { margin: 0; background: #010409; color: #fff; font-family: sans-serif; overflow: hidden; display: flex; flex-direction: column; height: 100vh; }
+        .panel { background: rgba(15, 23, 42, 0.95); padding: 12px; display: flex; gap: 10px; justify-content: center; z-index: 100; border-bottom: 2px solid #3b82f6; }
+        canvas { flex-grow: 1; width: 100%; height: 100%; }
+        button { border: none; padding: 10px 18px; border-radius: 6px; cursor: pointer; font-weight: bold; color: white; background: #3b82f6; }
+        #status { position: fixed; bottom: 20px; left: 20px; font-size: 12px; color: #64748b; }
     </style>
 </head>
 <body>
 
-<div class="ui">
-    <input type="file" id="midiInput" accept=".mid,.midi" style="display:none">
-    <button onclick="document.getElementById('midiInput').click()">📁 上傳 MIDI 檔案</button>
-    <button onclick="startMultiTrack()">🚀 啟動多軌演奏</button>
+<div class="panel">
+    <button onclick="setupMultiLanes()">🔄 重置並生成雙軌階梯</button>
+    <button onclick="isPaused = !isPaused" style="background:#10b981">⏯️ 暫停/播放</button>
 </div>
 
-<canvas id="stage"></canvas>
+<div id="status">多軌物理模式已啟動 | 頻率自動分流</div>
+<canvas id="mainCanvas"></canvas>
 
 <script>
-const canvas = document.getElementById('stage');
+const canvas = document.getElementById('mainCanvas');
 const ctx = canvas.getContext('2d');
+let audioCtx = null;
+let isPaused = false;
+
+// 模擬不同音域的頻率
+const melodyFreqs = [523.3, 587.3, 659.3, 698.5, 784, 880, 987.8]; // 高音組
+const bassFreqs = [261.6, 293.7, 329.6, 349.2, 392.0]; // 低音組
+
+let tracks = [];
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
-let balls = []; // 存儲多顆球
-let lanes = []; // 存儲多個軌道的音板
-
-function startMultiTrack() {
-    balls = []; lanes = [];
-    const trackCount = 2; // 先以雙軌測試 (例如鋼琴左右手)
-    
-    for(let i = 0; i < trackCount; i++) {
-        const laneY = (canvas.height / (trackCount + 1)) * (i + 1);
-        const color = i === 0 ? "#f87171" : "#60a5fa"; // 紅球跑高音，藍球跑低音
-        
-        // 模擬音板佈局 (未來由 MIDI 解析提供)
-        let trackSteps = [];
-        for(let j = 0; j < 15; j++) {
-            trackSteps.push({
-                x: 400 + j * 180,
-                y: laneY + Math.sin(j) * 30, // 稍微起伏增加美感
-                w: 80, h: 15, color: color
-            });
-        }
-        lanes.push(trackSteps);
-        
-        // 初始化該軌道的球
-        balls.push({
-            x: 100, y: laneY - 100,
-            vx: 3.5, vy: 0, r: 10, color: color,
-            currentIdx: 0, laneY: laneY
-        });
-    }
-    requestAnimationFrame(loop);
+function playSound(freq, type = 'triangle') {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.start(); osc.stop(audioCtx.currentTime + 0.5);
 }
 
-function loop() {
-    ctx.fillStyle = "rgba(2, 6, 23, 0.3)"; // 增加殘影效果
+function setupMultiLanes() {
+    tracks = [];
+    const trackConfigs = [
+        { name: "Melody", y: 200, color: "#f87171", freqs: melodyFreqs },
+        { name: "Bass", y: 500, color: "#60a5fa", freqs: bassFreqs }
+    ];
+
+    trackConfigs.forEach(cfg => {
+        let steps = [];
+        let curX = 400, curY = cfg.y;
+        
+        // 生成階梯路徑
+        for(let i = 0; i < 20; i++) {
+            steps.push({
+                x: curX, y: curY, 
+                w: 100, h: 18, 
+                freq: cfg.freqs[i % cfg.freqs.length],
+                active: 0
+            });
+            curX += 160; curY += 40; // 形成下坡階梯
+        }
+
+        tracks.push({
+            steps: steps,
+            ball: { x: 150, y: cfg.y - 100, vx: 3.8, vy: 0, r: 12, color: cfg.color },
+            currentIdx: 0,
+            color: cfg.color
+        });
+    });
+}
+
+function update() {
+    if (isPaused) return;
+
+    tracks.forEach(track => {
+        let b = track.ball;
+        b.vy += 0.35; b.x += b.vx; b.y += b.vy;
+
+        // 碰撞偵測
+        let s = track.steps[track.currentIdx];
+        if (s && b.x + b.r > s.x && b.x - b.r < s.x + s.w && b.y + b.r > s.y && b.vy > 0) {
+            b.y = s.y - b.r;
+            b.vy = -7.5; // 彈跳力度
+            s.active = 15;
+            playSound(s.freq, track.color === "#f87171" ? 'triangle' : 'sine');
+            track.currentIdx++;
+        }
+    });
+}
+
+function draw() {
+    ctx.fillStyle = "#020617";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
-    const camX = balls.length > 0 ? balls[0].x - 200 : 0; // 以主旋律球為攝影機中心
+
+    const cameraX = tracks.length > 0 ? tracks[0].ball.x - 300 : 0;
 
     ctx.save();
-    ctx.translate(-camX, 0);
+    ctx.translate(-cameraX, 0);
 
-    lanes.forEach((steps, laneIdx) => {
-        steps.forEach(s => {
-            ctx.fillStyle = s.color;
-            ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, s.h, 5); ctx.fill();
+    tracks.forEach(track => {
+        // 畫音板
+        track.steps.forEach(s => {
+            ctx.fillStyle = s.active > 0 ? "#fff" : track.color;
+            if(s.active > 0) s.active--;
+            ctx.beginPath();
+            ctx.roundRect(s.x, s.y, s.w, s.h, 5);
+            ctx.fill();
         });
 
-        let b = balls[laneIdx];
-        if (b) {
-            // 簡易物理邏輯
-            b.vy += 0.25; b.x += b.vx; b.y += b.vy;
-            
-            let target = steps[b.currentIdx];
-            if (target && b.x + b.r > target.x && b.x - b.r < target.x + target.w &&
-                b.y + b.r > target.y && b.vy > 0) {
-                b.y = target.y - b.r; b.vy = -7; // 彈跳
-                b.currentIdx++;
-            }
-            
-            ctx.fillStyle = b.color;
-            ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI*2); ctx.fill();
-            // 畫出球的移動軌跡感
-            ctx.shadowBlur = 15; ctx.shadowColor = b.color;
-        }
+        // 畫球
+        let b = track.ball;
+        ctx.shadowBlur = 20; ctx.shadowColor = b.color;
+        ctx.fillStyle = b.color;
+        ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill();
+        ctx.shadowBlur = 0;
     });
 
     ctx.restore();
-    requestAnimationFrame(loop);
+    update();
+    requestAnimationFrame(draw);
 }
+
+setupMultiLanes();
+draw();
 </script>
 </body>
 </html>
