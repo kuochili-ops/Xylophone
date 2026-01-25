@@ -1,43 +1,183 @@
-// 修改後的 failAndFix 函式邏輯
-function failAndFix(reason) {
-    log(`<span style="color:#f87171">失敗：${reason}</span>`);
-    
-    if (steps[currentNoteIndex]) {
-        const target = steps[currentNoteIndex];
-        
-        if (currentNoteIndex === 0) {
-            // 策略 A：讓球的起始位置往右移 (你提到的核心需求)
-            // 我們可以新增一個變數 ballStartX，每次失敗就 +20
-            ballStartX += 20; 
-            
-            // 策略 B：同時將第一個板子往左移，雙管齊下
-            target.x -= 30;
-            target.y -= 10; // 稍微抬高防止掉太快
-            
-            log(`🔧 <span style="color:#60a5fa">首音校準：球起始點右移至 ${ballStartX}px，板子左移</span>`);
-        } else {
-            // 後續音符的修正邏輯保持不變...
-            target.x -= 30;
-            target.y -= 40;
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>AI 木琴機 - 首音自動校準版</title>
+    <style>
+        body { margin: 0; background: #0a0a0c; color: #fff; font-family: sans-serif; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; }
+        .panel { position: fixed; top: 0; width: 100%; background: rgba(20,20,25,0.9); padding: 15px; display: flex; gap: 10px; justify-content: center; z-index: 10; border-bottom: 2px solid #3b82f6; }
+        canvas { background: radial-gradient(circle, #1e293b 0%, #020617 100%); border-radius: 8px; }
+        .stats-overlay { position: fixed; top: 80px; right: 20px; background: rgba(0,0,0,0.7); padding: 15px; border-radius: 10px; border: 1px solid #444; font-family: monospace; }
+        .ai-log { position: fixed; bottom: 20px; left: 20px; width: 320px; max-height: 200px; overflow-y: auto; background: rgba(0,0,0,0.8); padding: 10px; border-radius: 5px; color: #fbbf24; font-size: 12px; border-left: 4px solid #f59e0b; }
+        b { color: #10b981; }
+    </style>
+</head>
+<body>
+
+<div class="panel">
+    <strong>簡譜訓練：</strong>
+    <input type="text" id="notation" value="1231 1231 345  345" size="30" style="padding:8px; border-radius:4px; background:#222; color:#fff; border:1px solid #555;">
+    <button onclick="startTraining()" style="background:#3b82f6; color:white; border:none; padding:8px 16px; border-radius:4px; cursor:pointer; font-weight:bold;">開始訓練演奏</button>
+</div>
+
+<div class="stats-overlay">
+    <div>嘗試次數: <span id="att">1</span></div>
+    <div>發射位置 X: <span id="ballX">50</span></div>
+    <div>目前進度: <span id="prog">0</span> / <span id="total">0</span></div>
+</div>
+
+<div class="ai-log" id="log">系統：等待啟動...</div>
+<canvas id="mainCanvas"></canvas>
+
+<script>
+const canvas = document.getElementById('mainCanvas');
+const ctx = canvas.getContext('2d');
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+const freqMap = { '1': 261.6, '2': 293.7, '3': 329.6, '4': 349.2, '5': 392.0, '6': 440.0, '7': 493.9, '+1': 523.3 };
+
+let steps = [];
+let ball = null;
+let camera = { x: 0, y: 0 };
+let currentIdx = 0;
+let attempts = 1;
+let ballStartX = 50; // 這是我們會動態修正的關鍵參數
+const GRAVITY = 0.45;
+const VX = 5;
+
+function addLog(msg) {
+    const l = document.getElementById('log');
+    l.innerHTML = `<div>[試錯 ${attempts}] ${msg}</div>` + l.innerHTML;
+}
+
+function build(str) {
+    steps = [];
+    let curX = 220, curY = 250;
+    let notes = [];
+    for(let i=0; i<str.length; i++) {
+        if(str[i]==='+') { notes.push('+'+str[i+1]); i++; }
+        else { notes.push(str[i]); }
+    }
+    notes.forEach(n => {
+        if (n === ' ') { curX += 160; curY += 80; }
+        else if (freqMap[n]) {
+            steps.push({ x: curX, y: curY, freq: freqMap[n], label: n, w: 120, h: 25, active: 0, color: `hsl(${(steps.length * 50) % 360}, 65%, 55%)` });
+            curX += 160; curY += 45;
         }
+    });
+    document.getElementById('total').innerText = steps.length;
+}
+
+function play(f) {
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = 'triangle'; o.frequency.value = f;
+    g.gain.setValueAtTime(0.3, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.4);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime + 0.4);
+}
+
+function reset() {
+    ball = { x: ballStartX, y: 120, vx: VX, vy: 0, r: 15 };
+    currentIdx = 0;
+    camera = { x: 0, y: 0 };
+    document.getElementById('ballX').innerText = Math.round(ballStartX);
+}
+
+function fail(reason) {
+    addLog(`<span style="color:#f87171">失敗：${reason}</span>`);
+    
+    // 自我修正核心
+    if (currentIdx === 0) {
+        // 第一個音沒接到，球的發射位置向右移動
+        ballStartX += 30; 
+        addLog(`🔧 <b>修正：球發射點右移至 ${Math.round(ballStartX)}px</b>`);
+    } else {
+        // 後續音符沒接到，修正板子座標
+        const t = steps[currentIdx];
+        if(t) { t.x -= 30; t.y -= 30; addLog(`🔧 修正音符 [${t.label}] 座標`); }
     }
 
     attempts++;
-    document.getElementById('attemptCount').innerText = attempts;
-    setTimeout(resetBall, 200); // 縮短重試間隔，加快學習效率
+    document.getElementById('att').innerText = attempts;
+    setTimeout(reset, 300);
 }
 
-// 變更後的 resetBall 函式
-let ballStartX = 50; // 全域變數，紀錄學習後的起始位置
+function update() {
+    if (!ball) return;
+    ball.vy += GRAVITY;
+    ball.x += ball.vx;
+    ball.y += ball.vy;
 
-function resetBall() {
-    ball = { 
-        x: ballStartX, // 使用學習後的 x 座標
-        y: 120, 
-        vx: VX + (attempts * 0.1), // 隨嘗試次數微增初速，增加覆蓋範圍
-        vy: 0, 
-        r: 15 
-    };
-    currentNoteIndex = 0;
-    camera = { x: 0, y: 0 };
+    steps.forEach((s, i) => {
+        if (ball.x + ball.r > s.x && ball.x - ball.r < s.x + s.w &&
+            ball.y + ball.r > s.y && ball.y - ball.r < s.y + s.h && ball.vy > 0) {
+            
+            if (i === currentIdx) {
+                ball.y = s.y - ball.r;
+                ball.vy = -5;
+                s.active = 15;
+                play(s.freq);
+                currentIdx++;
+                document.getElementById('prog').innerText = currentIdx;
+            } else if (i < currentIdx) {
+                fail("卡在舊音階");
+            }
+        }
+    });
+
+    if (steps[currentIdx]) {
+        const target = steps[currentIdx];
+        if (ball.x > target.x + target.w + 50 || ball.y > target.y + 300) fail("沒接到音符");
+    } else if (currentIdx >= steps.length && steps.length > 0) {
+        addLog("<b>✅ 訓練完成！</b>");
+        ball = null;
+    }
+
+    camera.x += (ball.x - canvas.width/3 - camera.x) * 0.1;
+    camera.y += (ball.y - canvas.height/2 - camera.y) * 0.1;
 }
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    ctx.translate(-camera.x, -camera.y);
+    steps.forEach((s, i) => {
+        ctx.fillStyle = s.active > 0 ? '#fff' : s.color;
+        if (s.active > 0) s.active--;
+        if (i === currentIdx) { // 目標提示
+            ctx.shadowBlur = 20; ctx.shadowColor = "#fbbf24";
+            ctx.strokeStyle = "#fbbf24"; ctx.lineWidth = 2;
+            ctx.strokeRect(s.x-4, s.y-4, s.w+8, s.h+8);
+        }
+        ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, s.h, 5); ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = "#fff"; ctx.font = "bold 14px monospace";
+        ctx.fillText(s.label, s.x+10, s.y+18);
+    });
+    if (ball) {
+        ctx.fillStyle = "#ff4757";
+        ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2); ctx.fill();
+    }
+    ctx.restore();
+    update();
+    requestAnimationFrame(draw);
+}
+
+function startTraining() {
+    attempts = 1;
+    ballStartX = 50; 
+    build(document.getElementById('notation').value);
+    reset();
+}
+
+startTraining();
+draw();
+</script>
+</body>
+</html>
