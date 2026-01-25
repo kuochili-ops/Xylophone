@@ -2,31 +2,30 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 逐音修正木琴演奏機</title>
+    <title>AI 逐音修正木琴機 - 首音校準版</title>
     <style>
         body { margin: 0; background: #0f172a; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; color: #f8fafc; font-family: sans-serif; overflow: hidden; }
         .panel { position: fixed; top: 0; left: 0; right: 0; background: rgba(15, 23, 42, 0.9); padding: 15px; display: flex; gap: 10px; justify-content: center; z-index: 100; border-bottom: 2px solid #3b82f6; }
         canvas { background: #020617; border-radius: 12px; }
-        .stats { position: fixed; right: 20px; top: 80px; background: rgba(0,0,0,0.7); padding: 15px; border-radius: 8px; border: 1px solid #444; font-family: monospace; }
-        .log { position: fixed; bottom: 20px; left: 20px; color: #fbbf24; font-size: 13px; max-height: 150px; overflow-y: auto; width: 300px; }
-        .highlight { color: #10b981; font-weight: bold; }
+        .stats { position: fixed; right: 20px; top: 80px; background: rgba(0,0,0,0.8); padding: 15px; border-radius: 8px; border: 1px solid #444; font-family: monospace; }
+        .log { position: fixed; bottom: 20px; left: 20px; color: #fbbf24; font-size: 13px; max-height: 150px; overflow-y: auto; width: 350px; background: rgba(0,0,0,0.5); padding: 10px; }
     </style>
 </head>
 <body>
 
 <div class="panel">
-    <strong>AI 訓練模式：</strong>
-    <input type="text" id="customInput" value="1231 1231 345  345" size="40" style="padding:8px; border-radius:4px; background:#1e293b; color:white; border:1px solid #444;">
-    <button onclick="applyAndPlay()" style="background:#3b82f6; color:white; border:none; padding:8px 16px; border-radius:4px; cursor:pointer;">開始訓練</button>
+    <strong>AI 學習中：</strong>
+    <input type="text" id="customInput" value="1231 1231 345  345" size="40" style="padding:8px; background:#1e293b; color:white; border:1px solid #444;">
+    <button onclick="applyAndPlay()" style="background:#10b981; color:white; border:none; padding:8px 16px; border-radius:4px; cursor:pointer;">開始演化演奏</button>
 </div>
 
 <div class="stats" id="statsBox">
     <div>嘗試次數: <span id="attemptCount">1</span></div>
-    <div>目前進度: <span id="currentProgress">0</span> / <span id="totalNotes">0</span></div>
-    <div>修正狀態: <span id="fixStatus">偵測中</span></div>
+    <div>成功音符: <span id="currentProgress">0</span> / <span id="totalNotes">0</span></div>
+    <div style="color:#60a5fa">修正目標: <span id="fixTarget">-</span></div>
 </div>
 
-<div class="log" id="systemLog">系統：等待指令...</div>
+<div class="log" id="systemLog">系統：等待啟動...</div>
 <canvas id="xloCanvas"></canvas>
 
 <script>
@@ -49,19 +48,20 @@ const VX = 5;
 
 function log(msg) {
     const el = document.getElementById('systemLog');
-    el.innerHTML = `[${new Date().toLocaleTimeString()}] ${msg}<br>` + el.innerHTML;
+    el.innerHTML = `[Attempt ${attempts}] ${msg}<br>` + el.innerHTML;
 }
 
 function buildTrack(notation) {
     steps = [];
-    let curX = 200, curY = 200;
+    let curX = 250; // 初始給一點距離
+    let curY = 220;
     let notationArray = [];
     for(let i=0; i<notation.length; i++) {
         if(notation[i]==='+') { notationArray.push('+'+notation[i+1]); i++; }
         else { notationArray.push(notation[i]); }
     }
 
-    notationArray.forEach((n, idx) => {
+    notationArray.forEach((n) => {
         if (n === ' ') { curX += 160; curY += 80; }
         else if (freqMap[n]) {
             steps.push({
@@ -87,38 +87,47 @@ function playNote(f) {
 }
 
 function applyAndPlay() {
+    attempts = 1;
+    document.getElementById('attemptCount').innerText = attempts;
     buildTrack(document.getElementById('customInput').value);
     resetBall();
 }
 
 function resetBall() {
-    ball = { x: 50, y: 150, vx: VX, vy: 0, r: 15 };
+    // 球的發射位置固定
+    ball = { x: 50, y: 120, vx: VX, vy: 0, r: 15 };
     currentNoteIndex = 0;
     camera = { x: 0, y: 0 };
+    document.getElementById('currentProgress').innerText = 0;
 }
 
 function failAndFix(reason) {
-    log(`<span style="color:#ef4444">❌ 失敗：${reason}</span>`);
-    document.getElementById('fixStatus').innerText = "修正軌道中...";
+    log(`<span style="color:#f87171">失敗：${reason}</span>`);
     
-    // 修正邏輯：針對當前目標音符（或前一個音符）進行物理調整
     if (steps[currentNoteIndex]) {
         const target = steps[currentNoteIndex];
-        if (reason === "錯過音符") {
-            // 如果球掉太深接不到，就把目標音符往球的方向靠攏（修正落差）
-            target.y -= 30;
-            target.x -= 20;
-            log(`🔧 修正音符 [${target.label}]：提高位置並縮短距離`);
-        } else if (reason === "卡在音階") {
-            // 如果重複跳動，縮短板子寬度
-            target.w -= 30;
-            log(`🔧 修正音符 [${target.label}]：縮短板子寬度防止受困`);
+        
+        if (currentNoteIndex === 0) {
+            // 特別針對第一個音：如果接不到，將階梯往球的方向(x軸減少)靠近
+            // 或者如你所說，球的位置往 x 軸移動，等於縮短兩者差距
+            target.x -= 40; 
+            target.y -= 20;
+            log(`🔧 <span style="color:#60a5fa">首音修正：將音符 [${target.label}] 向左移動 40px 以便接球</span>`);
+        } else {
+            // 其他音符修正
+            if (reason === "錯過音符") {
+                target.x -= 30;
+                target.y -= 40;
+                log(`🔧 修正音符 [${target.label}]：縮短跳躍距離並提高高度`);
+            } else {
+                target.w -= 20; // 縮短板子解決卡頓
+            }
         }
     }
 
     attempts++;
     document.getElementById('attemptCount').innerText = attempts;
-    setTimeout(resetBall, 500); // 稍微停頓後重頭再來
+    setTimeout(resetBall, 400); 
 }
 
 function update() {
@@ -131,34 +140,32 @@ function update() {
         if (ball.x + ball.r > s.x && ball.x - ball.r < s.x + s.w &&
             ball.y + ball.r > s.y && ball.y - ball.r < s.y + s.h && ball.vy > 0) {
             
-            // 如果撞擊的不是「下一個應該撞擊的音符」，也算失敗
-            if (idx !== currentNoteIndex && idx < currentNoteIndex) {
-                 // 重複撞到舊音符，修正
-                 failAndFix("卡在音階");
-                 return;
-            }
-
-            ball.y = s.y - ball.r;
-            ball.vy = -5; // 固定推力
-            s.active = 15;
-            playNote(s.freq);
-            
+            // 判定是否為正確順序
             if (idx === currentNoteIndex) {
+                ball.y = s.y - ball.r;
+                ball.vy = -5.2; 
+                s.active = 15;
+                playNote(s.freq);
                 currentNoteIndex++;
                 document.getElementById('currentProgress').innerText = currentNoteIndex;
-                document.getElementById('fixStatus').innerText = "正常演奏中";
+            } else if (idx < currentNoteIndex) {
+                // 如果撞到已經彈過的音符且卡住了
+                failAndFix("卡在舊音階");
             }
         }
     });
 
-    // 判定錯過音符：如果球的 X 座標已經超過了目標音符的 X，且 Y 已經掉下去
+    // 錯過判定
     if (steps[currentNoteIndex]) {
         const target = steps[currentNoteIndex];
+        document.getElementById('fixTarget').innerText = `正在尋找音符 ${target.label}`;
+        
+        // 如果球已經飛過頭或者掉太深
         if (ball.x > target.x + target.w + 50 || ball.y > target.y + 200) {
             failAndFix("錯過音符");
         }
-    } else if (currentNoteIndex >= steps.length) {
-        log("<span class='highlight'>✅ 成功！全曲演奏完畢且無修正需求。</span>");
+    } else if (currentNoteIndex >= steps.length && steps.length > 0) {
+        log("<span style='color:#34d399; font-weight:bold;'>✅ 全曲成功！AI 已完成所有修正。</span>");
         ball = null;
     }
 
@@ -172,11 +179,12 @@ function draw() {
     ctx.translate(-camera.x, -camera.y);
 
     steps.forEach((s, i) => {
-        // 畫出目前的目標音符提示
+        // 目標音符光暈
         if (i === currentNoteIndex) {
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = "#fbbf24";
             ctx.strokeStyle = "#fbbf24";
-            ctx.lineWidth = 3;
-            ctx.strokeRect(s.x - 5, s.y - 5, s.w + 10, s.h + 10);
+            ctx.strokeRect(s.x - 2, s.y - 2, s.w + 4, s.h + 4);
         }
 
         ctx.fillStyle = s.active > 0 ? '#fff' : s.color;
@@ -184,6 +192,8 @@ function draw() {
         ctx.beginPath();
         ctx.roundRect(s.x, s.y, s.w, s.h, 6);
         ctx.fill();
+        ctx.shadowBlur = 0;
+
         ctx.fillStyle = "white";
         ctx.font = "bold 14px monospace";
         ctx.fillText(s.label, s.x + 10, s.y + 16);
