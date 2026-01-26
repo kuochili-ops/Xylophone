@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴機 5.7 - 緊湊節奏版</title>
+    <title>AI 木琴機 5.8 - 階梯滾落版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         body { margin: 0; background: #020617; overflow: hidden; display: flex; flex-direction: column; height: 100vh; }
@@ -15,8 +15,8 @@
 
 <div class="panel">
     <input type="file" id="midiUpload" accept=".mid,.midi" style="display:none">
-    <button onclick="document.getElementById('midiUpload').click()">📁 1. 上傳 MIDI</button>
-    <button id="startBtn" onclick="runFullProcess()" style="background:#f43f5e; display:none;">🚀 啟動緊湊演奏</button>
+    <button onclick="document.getElementById('midiUpload').click()">📁 上傳 MIDI (偵測連彈階梯)</button>
+    <button id="startBtn" onclick="runFullProcess()" style="background:#f43f5e; display:none;">🚀 開始演奏</button>
 </div>
 <canvas id="mainCanvas"></canvas>
 
@@ -26,9 +26,9 @@ const ctx = canvas.getContext('2d');
 let audioCtx = null, tracks = [], isRunning = false;
 let camX = 0, camY = 0;
 
-// ⚙️ 基礎物理常數
-const GRAVITY = 0.45, JUMP = -10;
-const BASE_SPEED_X = 5.8; // 基礎速度
+const GRAVITY = 0.48; // 稍微增加重力感，讓跌落更清脆
+const JUMP = -9.5;
+const BASE_SPEED_X = 5.5; 
 
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
@@ -39,73 +39,66 @@ document.getElementById('midiUpload').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     const midi = await Midi.fromUrl(URL.createObjectURL(file));
-    setupCompactData(midi);
+    setupStaircaseData(midi);
     document.getElementById('startBtn').style.display = "inline-block";
 });
 
-function setupCompactData(midi) {
+function setupStaircaseData(midi) {
     tracks = [];
-    let startTime = Infinity;
     const mainTrack = midi.tracks.find(t => !t.percusion && t.notes.length > 5) || midi.tracks[0];
+    let startTime = Infinity;
 
-    let filteredNotes = [];
-    let lastTime = -1;
-    mainTrack.notes.sort((a, b) => a.time - b.time).forEach(note => {
-        if (Math.abs(note.time - lastTime) < 0.05) {
-            if (note.midi > filteredNotes[filteredNotes.length - 1].midi) filteredNotes[filteredNotes.length - 1] = note;
-        } else {
-            filteredNotes.push(note);
-            lastTime = note.time;
+    // 過濾與簡化和弦
+    let notes = mainTrack.notes.sort((a, b) => a.time - b.time);
+    let filtered = [];
+    notes.forEach(n => {
+        if (filtered.length === 0 || n.time - filtered[filtered.length-1].time > 0.05) {
+            filtered.push(n);
         }
     });
 
-    if (filteredNotes[0].time < startTime) startTime = filteredNotes[0].time;
+    startTime = filtered[0].time;
 
-    let steps = filteredNotes.map((note, nIdx) => {
-        // 💡 邏輯改進：時間越短，寬度基礎值越小
-        const width = Math.max(50, note.duration * BASE_SPEED_X * 50);
+    let steps = filtered.map((note, i) => {
+        // 判斷是否為連續短音 (與下一音間隔小於 0.25 秒)
+        const nextNote = filtered[i+1];
+        const isSequence = nextNote ? (nextNote.time - note.time < 0.25) : false;
+        
         return {
             x: 0, 
             time: note.time - startTime,
-            y: 500 + (nIdx * 65), 
-            w: width, h: 20, freq: midiToFreq(note.midi), duration: note.duration, active: 0
+            y: 500 + (i * 60), 
+            w: Math.max(50, note.duration * 300), 
+            h: 15, 
+            freq: midiToFreq(note.midi), 
+            duration: note.duration,
+            isSequence: isSequence, // 標記是否連彈
+            active: 0
         };
     });
 
     tracks.push({
         steps,
-        ball: { 
-            x: 0, y: 0, vx: BASE_SPEED_X, vy: JUMP, r: 12, 
-            isRolling: false, rollingTarget: null 
-        },
+        ball: { x: 0, y: 0, vx: BASE_SPEED_X, vy: 0, r: 10, isRolling: false },
         currentIdx: 0
     });
 }
 
-// 🧠 核心：根據時間密度重新計算 X 座標 (緊湊化)
 function preCalculatePaths() {
     tracks.forEach(t => {
-        // 第一個音板位置
         t.steps[0].x = 400;
-        let vBall = { x: t.steps[0].x, y: t.steps[0].y - 30, vx: BASE_SPEED_X, vy: JUMP };
-        
-        t.ball.x = vBall.x;
-        t.ball.y = vBall.y;
-
-        for (let i = 0; i < t.steps.length; i++) {
-            let s = t.steps[i];
+        // 預算座標，讓階梯緊密排列
+        for (let i = 1; i < t.steps.length; i++) {
+            let prev = t.steps[i-1];
+            let curr = t.steps[i];
+            let timeDiff = curr.time - prev.time;
             
-            // 1. 設定目前音板位置（基於上一顆球跳完的位置，這裡由預算驅動）
-            if (i > 0) {
-                // 如果與上一個音時間很短，強制拉近 X 距離
-                let timeDiff = s.time - t.steps[i-1].time;
-                let compactDist = Math.max(80, timeDiff * BASE_SPEED_X * 60); 
-                s.x = t.steps[i-1].x + t.steps[i-1].w + compactDist * 0.5;
-            }
-
-            // 2. 模擬球從目前音板起跳後的落點，預判下一個音板
-            // (此處為了重複演奏穩定性，將預算後的 X 固化)
+            // 如果是連彈，X 間距縮小，讓球剛好滾落
+            let gap = prev.isSequence ? 30 : timeDiff * 300;
+            curr.x = prev.x + prev.w + gap;
         }
+        t.ball.x = t.steps[0].x;
+        t.ball.y = t.steps[0].y - 50;
     });
 }
 
@@ -123,46 +116,35 @@ function update() {
         let b = t.ball;
         let target = t.steps[t.currentIdx];
 
-        if (b.isRolling) {
-            b.x += b.vx;
-            b.y = b.rollingTarget.y - b.r;
-            if (b.x >= b.rollingTarget.x + b.rollingTarget.w * 0.9) {
-                b.isRolling = false;
-                b.vy = JUMP;
-                t.currentIdx++;
-                // 💡 動態調整橫向速度：根據到下一個目標的距離調整，確保節奏準確
-                let next = t.steps[t.currentIdx];
-                if (next) {
-                    let dist = next.x - b.x;
-                    // 根據物理公式調整 vx，讓球剛好落在下一個板子前端
-                    // 這裡簡化為距離比例
-                }
-            }
-        } else {
-            b.vy += GRAVITY; b.x += b.vx; b.y += b.vy;
-            if (target && b.x > target.x && b.x < target.x + target.w && b.y + b.r > target.y && b.vy > 0) {
-                b.isRolling = true;
-                b.rollingTarget = target;
-                target.active = 20;
+        // 物理模擬
+        b.vy += GRAVITY; b.x += b.vx; b.y += b.vy;
 
-                const osc = audioCtx.createOscillator(), g = audioCtx.createGain();
-                osc.type = 'triangle';
-                osc.frequency.setValueAtTime(target.freq, audioCtx.currentTime);
-                g.gain.setValueAtTime(0.15, audioCtx.currentTime);
-                g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + target.duration + 0.1);
-                osc.connect(g); g.connect(audioCtx.destination);
-                osc.start(); osc.stop(audioCtx.currentTime + target.duration + 0.2);
+        if (target && b.x > target.x && b.x < target.x + target.w && b.y + b.r > target.y && b.vy > 0) {
+            b.y = target.y - b.r;
+            
+            // 💡 關鍵：如果是連續短音 (isSequence)，不執行 JUMP，只給予微小的反彈緩衝
+            if (target.isSequence) {
+                b.vy = 0; // 滾落模式：取消向上彈力
+            } else {
+                b.vy = JUMP; // 正常模式：向上彈起
             }
-        }
-        
-        // 修正：如果球掉太深，強制傳送到下一個音板（安全機制）
-        if (target && b.y > target.y + 200) {
-             b.x = target.x; b.y = target.y - 50; b.vy = 0;
+
+            // 音頻處理
+            const osc = audioCtx.createOscillator(), g = audioCtx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(target.freq, audioCtx.currentTime);
+            g.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + target.duration + 0.1);
+            osc.connect(g); g.connect(audioCtx.destination);
+            osc.start(); osc.stop(audioCtx.currentTime + target.duration + 0.2);
+            
+            target.active = 15;
+            t.currentIdx++;
         }
     });
 
     if (tracks[0]) {
-        camX += (tracks[0].ball.x - canvas.width * 0.25 - camX) * 0.1;
+        camX += (tracks[0].ball.x - canvas.width * 0.3 - camX) * 0.1;
         camY += (tracks[0].ball.y - canvas.height * 0.5 - camY) * 0.1;
     }
 }
@@ -175,14 +157,15 @@ function draw() {
     tracks.forEach(t => {
         t.steps.forEach((s, i) => {
             if (Math.abs(i - t.currentIdx) < 30) {
-                // 視覺強化：短音板顏色較深，長音板帶有漸層
-                ctx.fillStyle = s.active > 0 ? "#fff" : (s.w < 80 ? "#38bdf8" : "#1d4ed8");
+                // 連續短音用階梯色（淺藍），長音用深藍
+                ctx.fillStyle = s.active > 0 ? "#fff" : (s.isSequence ? "#38bdf8" : "#1e40af");
                 if(s.active > 0) s.active--;
-                ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, s.h, 5); ctx.fill();
+                ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, s.h, 4); ctx.fill();
             }
         });
+        
         ctx.fillStyle = "#f87171";
-        ctx.shadowBlur = 15; ctx.shadowColor = "#f87171";
+        ctx.shadowBlur = 10; ctx.shadowColor = "#f87171";
         ctx.beginPath(); ctx.arc(t.ball.x, t.ball.y, t.ball.r, 0, Math.PI*2); ctx.fill();
         ctx.shadowBlur = 0;
     });
