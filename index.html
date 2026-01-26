@@ -2,87 +2,112 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴機 2.0 - 快板精確縮短版</title>
+    <title>AI 木琴機 2.0 - 速度動態控制</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         body { margin: 0; background: #020617; color: #fff; font-family: sans-serif; overflow: hidden; }
-        .ui { position: fixed; top: 15px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; z-index: 100; background: rgba(15, 23, 42, 0.9); padding: 12px 24px; border-radius: 40px; border: 1px solid #3b82f6; }
-        button { border: none; padding: 8px 24px; border-radius: 20px; cursor: pointer; font-weight: bold; color: white; background: #3b82f6; transition: 0.3s; }
+        .ui { position: fixed; top: 15px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 10px; z-index: 100; background: rgba(15, 23, 42, 0.9); padding: 15px 25px; border-radius: 20px; border: 1px solid #3b82f6; align-items: center; }
+        .controls { display: flex; gap: 15px; align-items: center; }
+        .slider-box { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+        input[type=range] { width: 200px; cursor: pointer; }
+        button { border: none; padding: 8px 20px; border-radius: 20px; cursor: pointer; font-weight: bold; color: white; background: #3b82f6; transition: 0.3s; }
         #status { position: fixed; bottom: 20px; width: 100%; text-align: center; color: #60a5fa; font-size: 13px; }
+        label { font-size: 12px; color: #94a3b8; }
     </style>
 </head>
 <body>
 
 <div class="ui">
-    <input type="file" id="midiFile" accept=".mid,.midi" style="display:none">
-    <button onclick="document.getElementById('midiFile').click()">📁 載入音樂</button>
-    <button id="playBtn" onclick="startRolling()" style="background:#f43f5e; display:none;">🚀 啟動演奏</button>
+    <div class="controls">
+        <input type="file" id="midiFile" accept=".mid,.midi" style="display:none">
+        <button onclick="document.getElementById('midiFile').click()">📁 載入音樂</button>
+        <button id="playBtn" onclick="startRolling()" style="background:#f43f5e; display:none;">🚀 啟動</button>
+        
+        <div class="slider-box">
+            <label id="speedLabel">演奏速度: 1.0x</label>
+            <input type="range" id="speedSlider" min="0.5" max="2.0" step="0.1" value="1.0">
+        </div>
+    </div>
 </div>
 
-<div id="status">快板邏輯：縮短音板長度以增強節奏視覺感。</div>
+<div id="status">調整拉桿可即時縮短或拉長音板與速度。</div>
 <canvas id="stage"></canvas>
 
 <script>
 const canvas = document.getElementById('stage');
 const ctx = canvas.getContext('2d');
-let audioCtx = null, tracks = [], isRunning = false;
+let audioCtx = null, tracks = [], isRunning = false, midiData = null;
 let camX = 0, camY = 0, zoom = 1, globalBPM = 120;
+let speedMult = 1.0;
 
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
 const getFreq = (m) => 440 * Math.pow(2, (m - 69) / 12);
 
+// 監聽拉桿變化
+document.getElementById('speedSlider').addEventListener('input', (e) => {
+    speedMult = parseFloat(e.target.value);
+    document.getElementById('speedLabel').innerText = `演奏速度: ${speedMult.toFixed(1)}x`;
+    if (midiData) buildDynamicPaths(midiData); // 即時重繪軌道
+});
+
 document.getElementById('midiFile').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const midi = await Midi.fromUrl(URL.createObjectURL(file));
-    globalBPM = Math.round(midi.header.tempos[0]?.bpm || 120);
-    buildFastTempoPaths(midi);
+    midiData = await Midi.fromUrl(URL.createObjectURL(file));
+    globalBPM = Math.round(midiData.header.tempos[0]?.bpm || 120);
+    buildDynamicPaths(midiData);
     document.getElementById('playBtn').style.display = "inline-block";
 });
 
-function buildFastTempoPaths(midi) {
+function buildDynamicPaths(midi) {
+    const activeStates = tracks.map(t => ({ idx: t.currentIdx, ball: t.ball })); // 記錄當前播放位置
     tracks = [];
     const colors = ["#fb7185", "#38bdf8"];
     const BALL_R = 10;
     const MAX_GAP = BALL_R * 1.5; 
 
-    const timeScale = 700; 
+    // 關鍵公式：縮放係數隨速度反轉。速度越快(speedMult大)，間距縮小
+    const timeScale = 700 / speedMult; 
 
     midi.tracks.filter(t => t.notes.length > 0).slice(0, 2).forEach((track, tIdx) => {
         let steps = [];
         let lastY = 200 + (tIdx * 200); 
         
         track.notes.forEach((note, nIdx) => {
-            const x = 500 + note.time * timeScale;
+            const x = 500 + (note.time * timeScale);
             const pitchOffset = (72 - note.midi) * 3.5;
             
-            // 規則：單向下滑
             let targetY = lastY + 32 + pitchOffset; 
             if (targetY <= lastY) targetY = lastY + 10;
 
-            // --- 核心改進：縮短快板音板 ---
-            // 稍微降低寬度乘法係數，讓短音符看起來更精簡
-            let w = Math.max(25, note.duration * 500); 
+            // 音板長度隨速度變動
+            let w = Math.max(20, note.duration * (500 / speedMult)); 
 
-            // 確保間距緊湊
             if (nIdx > 0) {
                 const prev = steps[nIdx - 1];
                 const gap = x - (prev.x + prev.w);
-                if (gap > MAX_GAP) prev.w = (x - prev.x) - (MAX_GAP * 0.4);
+                if (gap > MAX_GAP) prev.w = (x - prev.x) - (MAX_GAP * 0.5);
             }
 
             steps.push({ x, y: targetY, w, h: 12, freq: getFreq(note.midi), active: 0 });
             lastY = targetY;
         });
 
-        const vx = (globalBPM / 120) * 6.2;
+        // 球的物理速度隨拉桿加快
+        const vx = (globalBPM / 120) * 6.0; 
 
+        // 如果已經在運行，保持球的位置比例
+        const oldState = activeStates[tIdx];
         tracks.push({
             steps,
-            ball: { x: steps[0].x, y: steps[0].y - 80, vx: vx, vy: 0, r: BALL_R, color: colors[tIdx] },
-            currentIdx: 0,
+            ball: { 
+                x: oldState ? steps[oldState.idx].x : steps[0].x, 
+                y: oldState ? steps[oldState.idx].y - 20 : steps[0].y - 80, 
+                vx: vx, vy: 0, r: BALL_R, color: colors[tIdx] 
+            },
+            currentIdx: oldState ? oldState.idx : 0,
             oscType: tIdx === 0 ? 'triangle' : 'sine'
         });
     });
@@ -91,7 +116,7 @@ function buildFastTempoPaths(midi) {
 function startRolling() {
     if (!audioCtx) audioCtx = new AudioContext();
     isRunning = true;
-    document.querySelector('.ui').style.display = 'none';
+    document.getElementById('playBtn').style.display = 'none';
 }
 
 function update() {
@@ -100,9 +125,7 @@ function update() {
 
     tracks.forEach(t => {
         let b = t.ball;
-        b.vy += 0.52; // 稍微增加重力，讓換板下落更快更清脆
-        b.x += b.vx;
-        b.y += b.vy;
+        b.vy += 0.5; b.x += b.vx; b.y += b.vy;
 
         let target = t.steps[t.currentIdx];
         if (target) {
@@ -111,11 +134,13 @@ function update() {
                 b.y = target.y - b.r; b.vy = 0;
                 if (target.active === 0) {
                     const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-                    o.type = t.oscType; o.frequency.setValueAtTime(target.freq, audioCtx.currentTime);
+                    o.type = t.oscType; 
+                    // 音頻播放速度也隨之調整
+                    o.frequency.setValueAtTime(target.freq, audioCtx.currentTime);
                     g.gain.setValueAtTime(0.08, audioCtx.currentTime);
-                    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
+                    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + (0.4 / speedMult));
                     o.connect(g); g.connect(audioCtx.destination);
-                    o.start(); o.stop(audioCtx.currentTime + 0.3);
+                    o.start(); o.stop(audioCtx.currentTime + (0.4 / speedMult));
                     target.active = 20;
                 }
             }
@@ -125,19 +150,13 @@ function update() {
         minY = Math.min(minY, b.y); maxY = Math.max(maxY, b.y);
     });
 
-    camX += ((minX + maxX)/2 - canvas.width/2 - camX) * 0.12;
-    camY += ((minY + maxY)/2 - canvas.height/2 - camY) * 0.08;
-    
-    const targetZoom = Math.max(0.7, Math.min(1.1, canvas.height / ((maxY - minY) + 350)));
-    zoom += (targetZoom - zoom) * 0.05;
+    camX += ((minX + maxX)/2 - canvas.width/2 - camX) * 0.15;
+    camY += ((minY + maxY)/2 - canvas.height/2 - camY) * 0.1;
 }
 
 function draw() {
     ctx.fillStyle = "#020617"; ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.save();
-    ctx.translate(canvas.width/2, canvas.height/2);
-    ctx.scale(zoom, zoom);
-    ctx.translate(-canvas.width/2, -canvas.height/2);
     ctx.translate(-camX, -camY);
 
     tracks.forEach(t => {
