@@ -2,16 +2,15 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴機 2.0 - 物理啟動修復</title>
+    <title>AI 木琴機 2.0 - 多軌全景跟隨版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         body { margin: 0; background: #020617; color: #fff; font-family: sans-serif; overflow: hidden; display: flex; flex-direction: column; height: 100vh; }
         .panel { background: rgba(15, 23, 42, 0.95); padding: 12px; display: flex; gap: 10px; justify-content: center; align-items: center; z-index: 100; border-bottom: 2px solid #3b82f6; }
         canvas { flex-grow: 1; width: 100%; height: 100%; }
         button { border: none; padding: 10px 18px; border-radius: 6px; cursor: pointer; font-weight: bold; color: white; background: #3b82f6; }
-        .btn-start { background: #f43f5e !important; animation: pulse 2s infinite; }
-        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
-        #status { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); font-size: 14px; color: #60a5fa; background: rgba(0,0,0,0.8); padding: 8px 20px; border-radius: 20px; border: 1px solid #1e293b; }
+        .mode-active { background: #10b981 !important; border: 2px solid #fff; }
+        #status { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); font-size: 14px; color: #60a5fa; background: rgba(0,0,0,0.8); padding: 8px 20px; border-radius: 20px; }
     </style>
 </head>
 <body>
@@ -19,17 +18,18 @@
 <div class="panel">
     <input type="file" id="midiUpload" accept=".mid,.midi" style="display:none">
     <button onclick="document.getElementById('midiUpload').click()">📁 1. 上傳 MIDI</button>
-    <button id="startBtn" class="btn-start" onclick="startEngine()" style="display:none;">🚀 2. 點擊啟動 (解鎖物理與聲音)</button>
+    <button id="startBtn" onclick="startEngine()" style="background:#f43f5e; display:none;">🚀 2. 啟動多軌演奏</button>
     <button onclick="toggleLock()" id="lockBtn" style="background:#8b5cf6">🔓 訓練模式</button>
 </div>
 
-<div id="status">請先上傳 MIDI 檔案以生成路徑</div>
+<div id="status">上傳 MIDI 後將自動分配多路徑</div>
 <canvas id="mainCanvas"></canvas>
 
 <script>
 const canvas = document.getElementById('mainCanvas');
 const ctx = canvas.getContext('2d');
-let audioCtx = null, tracks = [], isRunning = false, isLocked = false, camX = 0;
+let audioCtx = null, tracks = [], isRunning = false, isLocked = false;
+let camX = 0, camY = 0, zoom = 1;
 
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
@@ -38,41 +38,42 @@ const midiToFreq = (m) => 440 * Math.pow(2, (m - 69) / 12);
 
 function toggleLock() {
     isLocked = !isLocked;
-    document.getElementById('lockBtn').innerText = isLocked ? "🔒 座標已鎖定" : "🔓 訓練模式 (板子會動)";
-    document.getElementById('lockBtn').style.background = isLocked ? "#10b981" : "#8b5cf6";
+    const btn = document.getElementById('lockBtn');
+    btn.innerText = isLocked ? "🔒 座標鎖定 (正式演出)" : "🔓 訓練模式 (修正中)";
+    btn.style.background = isLocked ? "#10b981" : "#8b5cf6";
 }
 
 document.getElementById('midiUpload').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    document.getElementById('status').innerText = "解析音樂中...";
+    document.getElementById('status').innerText = "多軌道路徑計算中...";
     try {
         const midi = await Midi.fromUrl(URL.createObjectURL(file));
         setupPhysics(midi);
         document.getElementById('startBtn').style.display = "inline-block";
-        document.getElementById('status').innerText = "解析成功！點擊上方紅色按鈕啟動。";
+        document.getElementById('status').innerText = "解析完成！請啟動。";
     } catch (err) {
-        document.getElementById('status').innerText = "解析失敗，請確認檔案格式。";
+        document.getElementById('status').innerText = "解析失敗";
     }
 });
 
 function setupPhysics(midi) {
     tracks = [];
-    const colors = ["#f87171", "#60a5fa", "#fbbf24", "#34d399"];
+    const colors = ["#f87171", "#60a5fa", "#fbbf24", "#34d399", "#a78bfa"];
     
-    // 取前 4 軌
-    midi.tracks.slice(0, 4).forEach((track, tIdx) => {
-        if (track.notes.length === 0) return;
-        
-        const laneBaseY = 150 + (tIdx * 300);
+    // 過濾出有音符的軌道
+    const validTracks = midi.tracks.filter(t => t.notes.length > 0).slice(0, 5);
+    
+    validTracks.forEach((track, tIdx) => {
+        // 每一軌擁有獨立的 Y 軸起始高度，間距加大避免視覺重疊
+        const laneBaseY = 100 + (tIdx * 400); 
         let steps = [];
         
         track.notes.forEach((note, nIdx) => {
             steps.push({
-                x: 400 + note.time * 650, 
-                // 逐板降低 (nIdx * 40) 確保位能，加上音高偏移 (70-note.midi)
-                y: laneBaseY + (nIdx * 45) + (70 - note.midi) * 6, 
-                w: 110, h: 16,
+                x: 400 + note.time * 600, 
+                y: laneBaseY + (nIdx * 45) + (70 - note.midi) * 6, // 逐板降低 + 音高偏移
+                w: 110, h: 18,
                 freq: midiToFreq(note.midi),
                 active: 0
             });
@@ -81,7 +82,7 @@ function setupPhysics(midi) {
         const first = steps[0];
         tracks.push({
             steps,
-            ball: { x: first.x - 80, y: first.y - 250, vx: 0, vy: 0, r: 12, color: colors[tIdx] },
+            ball: { x: first.x - 100, y: first.y - 300, vx: 0, vy: 0, r: 12, color: colors[tIdx % colors.length] },
             currentIdx: 0,
             type: tIdx % 2 === 0 ? 'triangle' : 'sine'
         });
@@ -89,47 +90,46 @@ function setupPhysics(midi) {
 }
 
 function startEngine() {
-    // 解決「球不掉下」：必須在點擊事件中啟動 Audio 與賦予初速
-    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if (audioCtx.state === 'suspended') audioCtx.resume();
-    
+    if (!audioCtx) audioCtx = new AudioContext();
     isRunning = true;
     tracks.forEach(t => {
-        t.ball.vx = 4.8; // 給予水平初速
-        t.ball.vy = 2;   // 給予垂直向下初速，確保第一跳必中
+        t.ball.vx = 4.8; 
+        t.ball.vy = 2; // 強制下落初速
     });
     document.getElementById('startBtn').style.display = "none";
-    document.getElementById('status').innerText = "正在演奏：觀察球路並在合適時鎖定座標。";
 }
 
 function playSound(f, type) {
     const o = audioCtx.createOscillator(), g = audioCtx.createGain();
     o.type = type; o.frequency.setValueAtTime(f, audioCtx.currentTime);
-    g.gain.setValueAtTime(0.2, audioCtx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+    g.gain.setValueAtTime(0.15, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.4);
     o.connect(g); g.connect(audioCtx.destination);
-    o.start(); o.stop(audioCtx.currentTime + 0.5);
+    o.start(); o.stop(audioCtx.currentTime + 0.4);
 }
 
 function update() {
-    if (!isRunning) return;
+    if (!isRunning || tracks.length === 0) return;
+
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+
     tracks.forEach(t => {
         let b = t.ball;
         b.vy += 0.38; b.x += b.vx; b.y += b.vy;
 
         let target = t.steps[t.currentIdx];
         if (target) {
-            // 訓練模式：板子自動微調位置接球
+            // 訓練模式修正
             if (!isLocked && b.y > target.y - 120 && b.vy > 0) {
-                target.x += (b.x - target.w/2 - target.x) * 0.35;
+                target.x += (b.x - target.w/2 - target.x) * 0.3;
             }
 
-            // 掉落自動重生 (安全網)
+            // 掉落自動歸位
             if (b.y > target.y + 600) {
-                b.x = target.x - 40; b.y = target.y - 180; b.vy = 0;
+                b.x = target.x - 40; b.y = target.y - 200; b.vy = 0;
             }
 
-            // 碰撞發聲
+            // 碰撞
             if (b.x + b.r > target.x && b.x - b.r < target.x + target.w && 
                 b.y + b.r > target.y && b.y < target.y + target.h && b.vy > 0) {
                 b.y = target.y - b.r; b.vy = -8.5;
@@ -138,22 +138,47 @@ function update() {
                 t.currentIdx++;
             }
         }
+        
+        // 收集所有球的位置用於攝影機計算
+        minX = Math.min(minX, b.x); maxX = Math.max(maxX, b.x);
+        minY = Math.min(minY, b.y); maxY = Math.max(maxY, b.y);
     });
-    if(tracks.length > 0) camX += (tracks[0].ball.x - 300 - camX) * 0.1;
+
+    // 🎥 攝影機智慧跟隨邏輯
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+    
+    // 平滑跟隨中心點
+    camX += (centerX - canvas.width/2 - camX) * 0.05;
+    camY += (centerY - canvas.height/2 - camY) * 0.05;
+
+    // 根據球體間距自動縮放 (如果球離太遠就縮小畫面)
+    const dist = Math.max(maxX - minX, (maxY - minY) * 1.5);
+    const targetZoom = Math.min(1, canvas.width / (dist + 400));
+    zoom += (targetZoom - zoom) * 0.02;
 }
 
 function draw() {
     ctx.fillStyle = "#020617"; ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.save(); ctx.translate(-camX, 0);
+    
+    ctx.save();
+    // 執行中心縮放
+    ctx.translate(canvas.width/2, canvas.height/2);
+    ctx.scale(zoom, zoom);
+    ctx.translate(-canvas.width/2, -canvas.height/2);
+    
+    ctx.translate(-camX, -camY);
+
     tracks.forEach(t => {
         t.steps.forEach(s => {
             ctx.fillStyle = s.active > 0 ? "#fff" : t.ball.color;
             if(s.active > 0) s.active--;
-            ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, s.h, 5); ctx.fill();
+            ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, s.h, 6); ctx.fill();
         });
         ctx.fillStyle = t.ball.color;
         ctx.beginPath(); ctx.arc(t.ball.x, t.ball.y, t.ball.r, 0, Math.PI*2); ctx.fill();
     });
+
     ctx.restore();
     update();
     requestAnimationFrame(draw);
