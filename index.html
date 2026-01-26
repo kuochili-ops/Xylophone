@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴機 2.0 - 緊湊雙軌版</title>
+    <title>AI 木琴機 2.0 - 連續下滑軌道</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         body { margin: 0; background: #020617; color: #fff; font-family: sans-serif; overflow: hidden; }
@@ -19,7 +19,7 @@
     <button id="playBtn" onclick="startRolling()" style="background:#f43f5e; display:none;">🚀 開始演奏</button>
 </div>
 
-<div id="status">兩球路徑已優化，維持同屏視野。</div>
+<div id="status">物理法則：單向下滑 + 極窄間距已套用。</div>
 <canvas id="stage"></canvas>
 
 <script>
@@ -37,37 +37,48 @@ document.getElementById('midiFile').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     const midi = await Midi.fromUrl(URL.createObjectURL(file));
-    buildCompactPaths(midi);
+    buildStrictPaths(midi);
     document.getElementById('playBtn').style.display = "inline-block";
 });
 
-function buildCompactPaths(midi) {
+function buildStrictPaths(midi) {
     tracks = [];
     const colors = ["#fb7185", "#38bdf8"];
-    // 只取前兩軌 (通常是左右手)
+    const BALL_R = 10;
+    const MAX_GAP = BALL_R * 2; // 間距不超過球直徑
+
     midi.tracks.filter(t => t.notes.length > 0).slice(0, 2).forEach((track, tIdx) => {
-        // --- 關鍵優化：壓縮 Y 軸間距 (從 450 降到 180) ---
-        const laneY = 200 + (tIdx * 180); 
         let steps = [];
+        let lastY = 200 + (tIdx * 180); // 起始高度
         
         track.notes.forEach((note, nIdx) => {
-            const nextNote = track.notes[nIdx + 1];
-            let x = 400 + note.time * 650;
-            let y = laneY + (nIdx * 40) + (72 - note.midi) * 3.5;
+            const x = 500 + note.time * 650;
+            
+            // 條件 1：音板高度只會低於前一音 (y 增加)
+            // 計算當前音高偏移，但確保它至少比上一個音低 30px
+            const pitchOffset = (72 - note.midi) * 3;
+            let targetY = lastY + 35 + pitchOffset; 
+            if (targetY <= lastY) targetY = lastY + 10; // 強制下滑
+
             let w = note.duration * 650;
 
-            // 空隙自動補間
-            if (nextNote) {
-                const nextX = 400 + nextNote.time * 650;
-                const gap = nextX - (x + w);
-                if (gap > 20) w += gap * 0.9;
+            // 條件 2：間距不超過球直徑
+            if (nIdx > 0) {
+                const prevStep = steps[nIdx - 1];
+                const gap = x - (prevStep.x + prevStep.w);
+                if (gap > MAX_GAP) {
+                    // 如果間距太大，延長前一個板子直到間距等於直徑
+                    prevStep.w = (x - prevStep.x) - MAX_GAP;
+                }
             }
-            steps.push({ x, y, w, h: 12, freq: getFreq(note.midi), active: 0 });
+
+            steps.push({ x, y: targetY, w, h: 12, freq: getFreq(note.midi), active: 0 });
+            lastY = targetY;
         });
 
         tracks.push({
             steps,
-            ball: { x: steps[0].x, y: steps[0].y - 80, vx: 5.8, vy: 0, r: 10, color: colors[tIdx] },
+            ball: { x: steps[0].x, y: steps[0].y - 80, vx: 5.8, vy: 0, r: BALL_R, color: colors[tIdx] },
             currentIdx: 0,
             oscType: tIdx === 0 ? 'triangle' : 'sine'
         });
@@ -82,7 +93,6 @@ function startRolling() {
 
 function update() {
     if (!isRunning || tracks.length === 0) return;
-
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
 
     tracks.forEach(t => {
@@ -91,8 +101,8 @@ function update() {
 
         let target = t.steps[t.currentIdx];
         if (target) {
-            // 滾動與碰撞
-            if (b.x > target.x - 10 && b.x < target.x + target.w + 10 && 
+            // 滾動碰撞邏輯
+            if (b.x > target.x - 5 && b.x < target.x + target.w + 5 && 
                 b.y + b.r > target.y && b.y < target.y + 20 && b.vy >= 0) {
                 b.y = target.y - b.r; b.vy = 0;
                 if (target.active === 0) {
@@ -107,45 +117,27 @@ function update() {
             }
             if (b.x > target.x + target.w) t.currentIdx++;
         }
-        
-        // 攝影機邊界計算
         minX = Math.min(minX, b.x); maxX = Math.max(maxX, b.x);
         minY = Math.min(minY, b.y); maxY = Math.max(maxY, b.y);
     });
 
-    // 🎥 智慧全景跟隨
-    const centerX = (minX + maxX) / 2;
-    const centerY = (minY + maxY) / 2;
-    camX += (centerX - canvas.width/2 - camX) * 0.1;
-    camY += (centerY - canvas.height/2 - camY) * 0.1;
-
-    // 自動縮放：確保所有活動球體都在視野內且「不要太遠」
-    const viewWidth = (maxX - minX) + 300;
-    const viewHeight = (maxY - minY) + 300;
-    const targetZoom = Math.min(1.2, Math.min(canvas.width / viewWidth, canvas.height / viewHeight));
-    zoom += (targetZoom - zoom) * 0.05;
+    camX += ((minX + maxX)/2 - canvas.width/2 - camX) * 0.1;
+    camY += ((minY + maxY)/2 - canvas.height/2 - camY) * 0.05;
 }
 
 function draw() {
     ctx.fillStyle = "#020617"; ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.save();
-    
-    // 全景視角轉換
-    ctx.translate(canvas.width/2, canvas.height/2);
-    ctx.scale(zoom, zoom);
-    ctx.translate(-canvas.width/2, -canvas.height/2);
     ctx.translate(-camX, -camY);
 
     tracks.forEach(t => {
         t.steps.forEach(s => {
-            ctx.fillStyle = s.active > 0 ? "#fff" : t.ball.color + "88";
+            ctx.fillStyle = s.active > 0 ? "#fff" : t.ball.color + "66";
             if(s.active > 0) s.active--;
-            ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, s.h, 4); ctx.fill();
+            ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, s.h, 3); ctx.fill();
         });
         ctx.fillStyle = t.ball.color;
-        ctx.shadowBlur = 10; ctx.shadowColor = t.ball.color;
         ctx.beginPath(); ctx.arc(t.ball.x, t.ball.y, t.ball.r, 0, Math.PI*2); ctx.fill();
-        ctx.shadowBlur = 0;
     });
 
     ctx.restore();
