@@ -2,123 +2,132 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴機 2.0 - 錄影與留言版</title>
+    <title>AI 木琴機 2.0 - 瑪利歐預設版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         body { margin: 0; background: #020617; color: #fff; font-family: sans-serif; overflow: hidden; }
-        .ui { position: fixed; top: 15px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 10px; z-index: 100; background: rgba(15, 23, 42, 0.95); padding: 15px; border-radius: 20px; border: 1px solid #3b82f6; align-items: center; width: 90%; max-width: 600px; }
-        .controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
-        button, label { border: none; padding: 6px 15px; border-radius: 15px; cursor: pointer; font-weight: bold; color: white; background: #3b82f6; font-size: 13px; }
-        input[type="text"] { padding: 6px; border-radius: 10px; border: none; width: 150px; }
-        #status { position: fixed; bottom: 20px; width: 100%; text-align: center; color: #60a5fa; font-size: 13px; z-index: 10; pointer-events: none; }
+        .ui { position: fixed; top: 15px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 10px; z-index: 1000; background: rgba(15, 23, 42, 0.9); padding: 15px; border-radius: 20px; border: 1px solid #3b82f6; align-items: center; width: 90%; max-width: 650px; }
+        .controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; align-items: center; }
+        button, label { border: none; padding: 8px 16px; border-radius: 12px; cursor: pointer; font-weight: bold; color: white; background: #3b82f6; font-size: 13px; }
+        input[type="text"] { padding: 8px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: white; width: 140px; }
+        #status { position: fixed; bottom: 20px; width: 100%; text-align: center; color: #60a5fa; font-size: 13px; }
     </style>
 </head>
 <body>
 
 <div class="ui">
     <div class="controls">
-        <label for="midiFile">📁 載入MIDI</label>
-        <input type="file" id="midiFile" accept=".mid,.midi" style="display:none">
-        
-        <label for="bgFile">🖼️ 背景圖</label>
+        <label for="bgFile">🖼️ 更換背景</label>
         <input type="file" id="bgFile" accept="image/*" style="display:none">
         
-        <input type="text" id="userMsg" placeholder="輸入最後留言...">
+        <input type="text" id="userMsg" placeholder="最後留言內容..." value="MISSION COMPLETE!">
         
-        <button id="playBtn" onclick="startRolling()" style="background:#f43f5e; display:none;">🚀 學習演奏</button>
-        <button id="recordBtn" onclick="startRecording()" style="background:#10b981; display:none;">📹 錄製並分享</button>
+        <button id="playBtn" onclick="startRolling()" style="background:#f43f5e;">🚀 學習與修正 (Mario)</button>
+        <button id="recordBtn" onclick="startRecording()" style="background:#10b981; display:none;">📹 錄製完美 MP4</button>
+        
+        <label for="midiFile" style="background:#475569;">📁 換別首歌</label>
+        <input type="file" id="midiFile" accept=".mid,.midi" style="display:none">
     </div>
 </div>
 
-[span_0](start_span)<div id="status">請先載入 MIDI 檔案[span_0](end_span)</div>
+<div id="status">正在自動加載瑪利歐主題曲...</div>
 <canvas id="stage"></canvas>
 
 <script>
 const canvas = document.getElementById('stage');
 const ctx = canvas.getContext('2d');
 let audioCtx = null, tracks = [], isRunning = false, midiData = null;
-let camX = 0, camY = 0, zoom = 1;
-let bgImg = null, recorder = null, chunks = [];
+let camX = 0, camY = 0, zoom = 1, bgImg = null;
+let recorder = null, chunks = [];
 const BALL_VX = 4.2; 
 const BALL_R = 10;
 
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
-// 音頻與背景邏輯
+// --- 1. 自動加載預設 MIDI ---
+window.addEventListener('DOMContentLoaded', async () => {
+    try {
+        const response = await fetch('Mario Bros. - Super Mario Bros. Theme.mid');
+        if (!response.ok) throw new Error('找不到預設 MIDI 檔案');
+        const arrayBuffer = await response.arrayBuffer();
+        midiData = new Midi(arrayBuffer);
+        buildPaths(midiData);
+        document.getElementById('status').innerText = "瑪利歐主題曲載入成功！請點擊「學習與修正」。";
+    } catch (err) {
+        document.getElementById('status').innerText = "預設載入失敗，請手動載入 MIDI。";
+    }
+});
+
+// 背景處理
 document.getElementById('bgFile').addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (file) {
         const reader = new FileReader();
-        reader.onload = (event) => {
-            bgImg = new Image();
-            bgImg.src = event.target.result;
-        };
+        reader.onload = (ev) => { bgImg = new Image(); bgImg.src = ev.target.result; };
         reader.readAsDataURL(file);
     }
 });
 
+// 手動更換 MIDI
 document.getElementById('midiFile').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    try {
-        midiData = await Midi.fromUrl(URL.createObjectURL(file));
-        buildPaths(midiData);
-        document.getElementById('playBtn').style.display = "inline-block";
-        document.getElementById('status').innerText = "載入成功。建議先「學習演奏」修正路徑。";
-    } catch (err) {
-        document.getElementById('status').innerText = "MIDI 解析失敗，請換個檔案試試。";
-    }
+    const arrayBuffer = await file.arrayBuffer();
+    midiData = new Midi(arrayBuffer);
+    buildPaths(midiData);
+    document.getElementById('recordBtn').style.display = "none";
+    document.getElementById('playBtn').style.display = "inline-block";
 });
 
 function buildPaths(midi) {
     tracks = [];
-    const colors = ["#fb7185", "#38bdf8"];
-    midi.tracks.filter(t => t.notes.length > 0).slice(0, 2).forEach((track, tIdx) => {
+    const validTracks = midi.tracks.filter(t => t.notes.length > 0).sort((a,b)=>b.notes.length - a.notes.length).slice(0, 2);
+    validTracks.forEach((track, tIdx) => {
         let steps = [];
-        let lastY = 300 + (tIdx * 150);
+        let lastY = 300 + (tIdx * 200);
+        const color = tIdx === 0 ? "#fb7185" : "#38bdf8";
         track.notes.forEach((note, nIdx) => {
             const x = 500 + (note.time * 500); 
-            let targetY = lastY + 25 + (72 - note.midi) * 2;
-            if (targetY <= lastY) targetY = lastY + 8;
+            let targetY = lastY + 28 + (72 - note.midi) * 2.5;
+            if (targetY <= lastY) targetY = lastY + 10;
             let w = Math.max(35, note.duration * 480);
-            
             if (nIdx > 0) {
                 const prev = steps[nIdx - 1];
                 if (x - (prev.x + prev.w) > 0) prev.w = (x - prev.x) - 1;
             }
-            steps.push({ x, y: targetY, w, h: 12, freq: 440 * Math.pow(2, (note.midi - 69) / 12), active: 0, wasHit: false });
+            steps.push({ x, y: targetY, w, h: 12, freq: 440 * Math.pow(2,(note.midi-69)/12), active: 0, wasHit: false });
             lastY = targetY;
         });
         tracks.push({
             steps,
-            ball: { x: steps[0].x, y: steps[0].y - 80, vx: BALL_VX, vy: 0, r: BALL_R, color: colors[tIdx] },
+            ball: { x: steps[0].x, y: steps[0].y - 80, vx: BALL_VX, vy: 0, r: BALL_R, color: color },
             currentIdx: 0, oscType: tIdx === 0 ? 'triangle' : 'sine'
         });
     });
 }
 
 function startRolling() {
-    if (!audioCtx) audioCtx = new AudioContext();
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
     isRunning = true;
     document.getElementById('playBtn').style.display = 'none';
-    document.getElementById('status').innerText = "演奏中... 系統正在自動校準路徑。";
+    document.getElementById('status').innerText = "自動修正中... 瑪利歐正在闖關！";
 }
 
 function startRecording() {
     chunks = [];
     const stream = canvas.captureStream(60);
-    recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9' });
+    recorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
     recorder.ondataavailable = e => chunks.push(e.data);
     recorder.onstop = () => {
         const blob = new Blob(chunks, { type: 'video/mp4' });
         const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = 'performance.mp4'; a.click();
+        const a = document.createElement('a'); a.href = url; a.download = 'mario_performance.mp4'; a.click();
     };
     recorder.start();
     perfectReplay();
-    document.getElementById('status').innerText = "🔴 錄影中... 結束後將自動下載。";
+    document.getElementById('status').innerText = "🔴 錄製瑪利歐完美重播中...";
 }
 
 function perfectReplay() {
@@ -138,32 +147,35 @@ function update() {
         let target = t.steps[t.currentIdx];
         if (target) {
             allFinished = false;
-            if (b.x > target.x - 10 && b.x < target.x + target.w + 10 && b.y + b.r > target.y - 5 && b.vy >= 0) {
+            if (b.x > target.x - 12 && b.x < target.x + target.w + 12 && b.y + b.r > target.y - 5 && b.vy >= 0) {
                 b.y = target.y - b.r; b.vy = 0; target.wasHit = true;
                 if (target.active === 0) {
-                    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-                    o.type = t.oscType; o.frequency.setValueAtTime(target.freq, audioCtx.currentTime);
-                    g.gain.setTargetAtTime(0.08, audioCtx.currentTime, 0.01);
-                    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
-                    o.connect(g); g.connect(audioCtx.destination);
-                    o.start(); o.stop(audioCtx.currentTime + 0.4);
+                    playTone(target.freq, t.oscType);
                     target.active = 20;
                 }
             }
             if (b.x > target.x + target.w) t.currentIdx++;
         }
     });
-
     if (allFinished) {
         isRunning = false;
         if (recorder && recorder.state === "recording") recorder.stop();
         document.getElementById('recordBtn').style.display = "inline-block";
-        document.getElementById('status').innerText = "演奏結束。路徑已修正，可開始錄製。";
+        document.getElementById('status').innerText = "修正完成！可以進行錄影。";
     }
-
     const redBall = tracks[0].ball;
     camX += (redBall.x - canvas.width/2 - camX) * 0.15;
     camY += (redBall.y - canvas.height/2 - camY) * 0.1;
+}
+
+function playTone(freq, type) {
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    g.gain.setTargetAtTime(0.1, audioCtx.currentTime, 0.02);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime + 0.4);
 }
 
 function draw() {
@@ -174,10 +186,8 @@ function draw() {
     } else {
         ctx.fillStyle = "#020617"; ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
-
     ctx.save();
     ctx.translate(-camX, -camY);
-
     tracks.forEach(t => {
         t.steps.forEach(s => {
             ctx.fillStyle = s.active > 0 ? "#fff" : t.ball.color + "66";
@@ -186,22 +196,16 @@ function draw() {
         ctx.fillStyle = t.ball.color;
         ctx.beginPath(); ctx.arc(t.ball.x, t.ball.y, t.ball.r, 0, Math.PI*2); ctx.fill();
     });
-
-    // 顯示留言：定格在最後一軌紅球末端
-    const lastStep = tracks[0].steps[tracks[0].steps.length - 1];
-    const msg = document.getElementById('userMsg').value;
-    if (msg && lastStep) {
-        ctx.fillStyle = "#fff";
-        ctx.font = "bold 60px sans-serif";
-        ctx.textAlign = "center";
-        ctx.fillText(msg, lastStep.x + 200, lastStep.y);
+    const lastStep = tracks[0]?.steps[tracks[0].steps.length - 1];
+    if (lastStep && !isRunning && tracks[0].currentIdx >= tracks[0].steps.length) {
+        ctx.fillStyle = "#fff"; ctx.font = "bold 80px sans-serif"; ctx.textAlign = "center";
+        ctx.fillText(document.getElementById('userMsg').value, lastStep.x + 200, lastStep.y - 50);
     }
-
     ctx.restore();
-    update();
+    if (isRunning) update();
     requestAnimationFrame(draw);
 }
-draw();
+requestAnimationFrame(draw);
 </script>
 </body>
 </html>
