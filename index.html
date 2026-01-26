@@ -2,13 +2,14 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴機 6.5 - 0.1x 極速滾動版</title>
+    <title>AI 木琴機 6.6 - BPM 自適應 0.1x</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         body { margin: 0; background: #020617; overflow: hidden; display: flex; flex-direction: column; height: 100vh; }
         .panel { background: rgba(15, 23, 42, 0.95); padding: 15px; display: flex; gap: 10px; justify-content: center; z-index: 100; border-bottom: 2px solid #3b82f6; }
         canvas { flex-grow: 1; }
         button { border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: bold; color: white; background: #3b82f6; }
+        #bpmDisplay { color: #60a5fa; font-family: monospace; padding-top: 10px; }
     </style>
 </head>
 <body>
@@ -16,7 +17,8 @@
 <div class="panel">
     <input type="file" id="midiUpload" accept=".mid,.midi" style="display:none">
     <button onclick="document.getElementById('midiUpload').click()">📁 1. 上傳 MIDI</button>
-    <button id="startBtn" onclick="runFullProcess()" style="background:#f43f5e; display:none;">🚀 啟動 0.1x 極慢滑行</button>
+    <button id="startBtn" onclick="runFullProcess()" style="background:#f43f5e; display:none;">🚀 啟動自適應演奏</button>
+    <div id="bpmDisplay"></div>
 </div>
 <canvas id="mainCanvas"></canvas>
 
@@ -25,12 +27,12 @@ const canvas = document.getElementById('mainCanvas');
 const ctx = canvas.getContext('2d');
 let audioCtx = null, tracks = [], isRunning = false;
 let camX = 0, camY = 0;
+let currentBPM = 120;
 
-// ⚙️ 0.1 倍速參數優化
-const SPEED_MULT = 0.1;
-const BASE_SPEED_X = 0.6; // 極慢水平移動
-const GRAVITY = 0.08;     // 極低重力
-const ROLL_FALL_VY = 0.4; // 離開板子時的下墜力
+// ⚙️ 核心參考係數
+const SPEED_FACTOR = 0.1; // 你的 0.1 倍速參考
+const GRAVITY = 0.08;
+const ROLL_FALL_VY = 0.4;
 
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
@@ -41,11 +43,16 @@ document.getElementById('midiUpload').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     const midi = await Midi.fromUrl(URL.createObjectURL(file));
-    setupPerfectRollingData(midi);
+    
+    // 💡 提取 MIDI 速度 (BPM)
+    currentBPM = midi.header.tempos[0] ? midi.header.tempos[0].bpm : 120;
+    document.getElementById('bpmDisplay').innerText = `原始 BPM: ${Math.round(currentBPM)} | 運行速度: ${SPEED_FACTOR}x`;
+    
+    setupAdaptiveRolling(midi);
     document.getElementById('startBtn').style.display = "inline-block";
 });
 
-function setupPerfectRollingData(midi) {
+function setupAdaptiveRolling(midi) {
     tracks = [];
     const mainTrack = midi.tracks.find(t => t.notes.length > 5) || midi.tracks[0];
     let rawNotes = [...mainTrack.notes].sort((a, b) => a.time - b.time);
@@ -57,21 +64,25 @@ function setupPerfectRollingData(midi) {
         }
     });
 
+    // 💡 計算動態球速：基於 BPM 調整，BPM 越高球速越快
+    // 公式：(BPM / 60) * 像素基準 * SPEED_FACTOR
+    const adaptiveVX = (currentBPM / 60) * 80 * SPEED_FACTOR;
+
     let steps = [];
     let currentX = 400;
 
     // 助跑板
-    steps.push({ x: currentX, y: 300, w: 80, h: 12, isSilent: true, active: 0, freq: 0 });
-    currentX += 80;
+    steps.push({ x: currentX, y: 300, w: 100, h: 12, isSilent: true, active: 0, freq: 0 });
+    currentX += 100;
 
     filtered.forEach((note, i) => {
-        // 根據 0.1 倍速計算寬度
-        const width = note.duration * 600 * SPEED_MULT;
+        // 音板寬度精確對應音符時間
+        const width = note.duration * adaptiveVX * 60; 
         const finalWidth = Math.max(30, width);
 
         steps.push({
             x: currentX, 
-            y: 300 + ((i + 1) * 40), 
+            y: 300 + ((i + 1) * 42), 
             w: finalWidth, 
             h: 12, 
             freq: midiToFreq(note.midi),
@@ -85,7 +96,7 @@ function setupPerfectRollingData(midi) {
     tracks.push({
         steps,
         ball: { 
-            x: 405, y: 288, vx: BASE_SPEED_X, vy: 0, r: 8, 
+            x: 405, y: 288, vx: adaptiveVX, vy: 0, r: 8, 
             color: "#fb7185", isRolling: false 
         },
         currentIdx: 0
@@ -106,32 +117,24 @@ function update() {
         let target = t.steps[t.currentIdx];
 
         if (b.isRolling && target) {
-            // 💡 滾動狀態：強制鎖定在板子表面，不計算重力跳動
+            // 💡 黏著滾動模式：鎖定表面，解決背面跳動
             b.x += b.vx;
             b.y = target.y - b.r;
             b.vy = 0;
 
-            // 檢查是否走完目前板子
             if (b.x >= target.x + target.w) {
                 b.isRolling = false;
-                b.vy = ROLL_FALL_VY; // 離開邊緣，開始下墜
+                b.vy = ROLL_FALL_VY; 
                 t.currentIdx++;
             }
         } else {
-            // 下墜狀態：受重力影響
-            b.vy += GRAVITY; 
-            b.x += b.vx; 
-            b.y += b.vy;
+            b.vy += GRAVITY; b.x += b.vx; b.y += b.vy;
 
-            // 碰撞檢測
             if (target && b.x >= target.x && b.x <= target.x + target.w) {
                 if (b.y + b.r >= target.y && b.vy > 0) {
-                    b.isRolling = true; // 切換到滾動模式
+                    b.isRolling = true;
                     b.y = target.y - b.r;
-                    
-                    if (!target.isSilent) {
-                        playZenTone(target.freq, target.duration);
-                    }
+                    if (!target.isSilent) playZenTone(target.freq, target.duration);
                     target.active = 30;
                 }
             }
@@ -139,8 +142,8 @@ function update() {
     });
 
     if (tracks[0]) {
-        camX += (tracks[0].ball.x - canvas.width * 0.2 - camX) * 0.04;
-        camY += (tracks[0].ball.y - canvas.height * 0.4 - camY) * 0.04;
+        camX += (tracks[0].ball.x - canvas.width * 0.25 - camX) * 0.05;
+        camY += (tracks[0].ball.y - canvas.height * 0.4 - camY) * 0.05;
     }
 }
 
@@ -150,11 +153,10 @@ function playZenTone(freq, dur) {
     osc.type = 'sine';
     osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
     g.gain.setValueAtTime(0, audioCtx.currentTime);
-    g.gain.linearRampToValueAtTime(0.08, audioCtx.currentTime + 0.2);
-    // 0.1x 速下，聲音餘韻拉到最長
-    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur + 2.5);
+    g.gain.linearRampToValueAtTime(0.08, audioCtx.currentTime + 0.1);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur + 3.0);
     osc.connect(g); g.connect(audioCtx.destination);
-    osc.start(); osc.stop(audioCtx.currentTime + dur + 3.0);
+    osc.start(); osc.stop(audioCtx.currentTime + dur + 3.5);
 }
 
 function draw() {
@@ -164,17 +166,14 @@ function draw() {
 
     tracks.forEach(t => {
         t.steps.forEach((s, i) => {
-            if (Math.abs(i - t.currentIdx) < 30) {
+            if (Math.abs(i - t.currentIdx) < 40) {
                 ctx.fillStyle = s.active > 0 ? `rgba(255,255,255,${s.active/30})` : (s.isSilent ? "#334155" : "#1e40af");
                 if(s.active > 0) s.active--;
-                ctx.beginPath(); 
-                ctx.roundRect(s.x, s.y, s.w, s.h, 2); 
-                ctx.fill();
+                ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, s.h, 2); ctx.fill();
             }
         });
-        
         ctx.fillStyle = t.ball.color;
-        ctx.shadowBlur = 20; ctx.shadowColor = t.ball.color;
+        ctx.shadowBlur = 15; ctx.shadowColor = t.ball.color;
         ctx.beginPath(); ctx.arc(t.ball.x, t.ball.y, t.ball.r, 0, Math.PI*2); ctx.fill();
         ctx.shadowBlur = 0;
     });
