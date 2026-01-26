@@ -2,30 +2,37 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴機 2.0 - 精確重疊路徑修正</title>
+    <title>AI 木琴機 2.0 - 精確重疊與自訂 MIDI</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         body { margin: 0; background: #020617; color: #fff; font-family: sans-serif; overflow: hidden; }
-        .ui { position: fixed; top: 15px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 10px; z-index: 1000; background: rgba(15, 23, 42, 0.9); padding: 15px; border-radius: 20px; border: 1px solid #3b82f6; align-items: center; width: 90%; max-width: 650px; }
+        .ui { position: fixed; top: 15px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 10px; z-index: 1000; background: rgba(15, 23, 42, 0.95); padding: 15px; border-radius: 20px; border: 1px solid #3b82f6; align-items: center; width: 90%; max-width: 700px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
         .controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; align-items: center; }
-        button, label { border: none; padding: 8px 16px; border-radius: 12px; cursor: pointer; font-weight: bold; color: white; background: #3b82f6; font-size: 13px; }
-        input[type="text"] { padding: 8px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: white; width: 140px; }
-        #status { position: fixed; bottom: 20px; width: 100%; text-align: center; color: #60a5fa; font-size: 13px; }
+        button, label { border: none; padding: 8px 18px; border-radius: 12px; cursor: pointer; font-weight: bold; color: white; background: #3b82f6; font-size: 13px; transition: all 0.2s; }
+        button:hover, label:hover { background: #2563eb; transform: translateY(-1px); }
+        input[type="text"] { padding: 8px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: white; width: 160px; }
+        #status { position: fixed; bottom: 20px; width: 100%; text-align: center; color: #60a5fa; font-size: 13px; text-shadow: 0 2px 4px #000; }
+        .highlight { color: #f43f5e; }
     </style>
 </head>
 <body>
 
 <div class="ui">
     <div class="controls">
-        <label for="bgFile">🖼️ 背景圖</label>
+        <label for="midiFile" style="background:#8b5cf6;">📁 輸入 MIDI 檔</label>
+        <input type="file" id="midiFile" accept=".mid,.midi" style="display:none">
+        
+        <label for="bgFile" style="background:#64748b;">🖼️ 背景圖</label>
         <input type="file" id="bgFile" accept="image/*" style="display:none">
-        <input type="text" id="userMsg" placeholder="留言..." value="PERFECT MATCH!">
-        <button id="playBtn" onclick="startRolling()" style="background:#f43f5e;">🚀 學習與修正</button>
-        <button id="recordBtn" onclick="startRecording()" style="background:#10b981; display:none;">📹 錄製 MP4</button>
+        
+        <input type="text" id="userMsg" placeholder="演奏結束留言..." value="PERFECT PERFORMANCE!">
+        
+        <button id="playBtn" onclick="startRolling()" style="background:#f43f5e; display:none;">🚀 學習與修正</button>
+        <button id="recordBtn" onclick="startRecording()" style="background:#10b981; display:none;">📹 錄製完美 MP4</button>
     </div>
 </div>
 
-<div id="status">自動讀取預設 MIDI 檔案中...</div>
+<div id="status">等待輸入 MIDI 檔案以生成路徑...</div>
 <canvas id="stage"></canvas>
 
 <script>
@@ -37,38 +44,62 @@ let recorder = null, chunks = [];
 
 const BALL_VX = 4.2; 
 const BALL_R = 10;
-const DIA = BALL_R * 2; // 直徑 20px
-const OVERLAP = BALL_R * 2.5; // 兩半直徑 = 50px
+const DIA = BALL_R * 2; 
+const OVERLAP = BALL_R * 2.5; // 50px 重疊量
 
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
-// 預設加載
-window.addEventListener('DOMContentLoaded', async () => {
+// 1. 處理 MIDI 輸入
+document.getElementById('midiFile').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
     try {
-        const response = await fetch('Mario Bros. - Super Mario Bros. Theme.mid');
-        const arrayBuffer = await response.arrayBuffer();
+        const arrayBuffer = await file.arrayBuffer();
         midiData = new Midi(arrayBuffer);
         buildPaths(midiData);
-        document.getElementById('status').innerText = "載入成功！路徑已實施「前向重疊修正」。";
+        
+        document.getElementById('playBtn').style.display = "inline-block";
+        document.getElementById('recordBtn').style.display = "none";
+        document.getElementById('status').innerHTML = `已讀取: <span class="highlight">${file.name}</span>。點擊「學習與修正」優化路徑。`;
+        
+        // 重置相機
+        if(tracks.length > 0) {
+            camX = tracks[0].ball.x - canvas.width/2;
+            camY = tracks[0].ball.y - canvas.height/2;
+        }
     } catch (err) {
-        document.getElementById('status').innerText = "請手動載入檔案或檢查檔名。";
+        document.getElementById('status').innerText = "MIDI 解析錯誤，請檢查檔案格式。";
+    }
+});
+
+// 背景處理
+document.getElementById('bgFile').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = (ev) => { bgImg = new Image(); bgImg.src = ev.target.result; };
+        reader.readAsDataURL(file);
     }
 });
 
 function buildPaths(midi) {
     tracks = [];
-    const validTracks = midi.tracks.filter(t => t.notes.length > 0).sort((a,b)=>b.notes.length - a.notes.length).slice(0, 2);
+    const validTracks = midi.tracks.filter(t => t.notes.length > 0)
+                                   .sort((a,b) => b.notes.length - a.notes.length)
+                                   .slice(0, 2);
     
     validTracks.forEach((track, tIdx) => {
         let steps = [];
         let lastY = 300 + (tIdx * 200);
         const color = tIdx === 0 ? "#fb7185" : "#38bdf8";
 
+        // 第一步：基礎音符轉換
         track.notes.forEach((note) => {
-            const x = 500 + (note.time * 500); 
-            let targetY = lastY + 28 + (72 - note.midi) * 2.5;
-            if (targetY <= lastY) targetY = lastY + 10;
+            const x = 500 + (note.time * 550); 
+            let targetY = lastY + 30 + (72 - note.midi) * 2.5;
+            if (targetY <= lastY) targetY = lastY + 12; // 確保強制下滑
             let w = Math.max(40, note.duration * 480);
 
             steps.push({ 
@@ -79,26 +110,25 @@ function buildPaths(midi) {
             lastY = targetY;
         });
 
-        // --- 核心邏輯修正：重疊補強 ---
+        // 第二步：實施精確重疊修正
         for (let i = 0; i < steps.length - 1; i++) {
             let current = steps[i];
             let next = steps[i+1];
 
-            // 1. 確保 X 軸間隙不大於一直徑 (20px)
+            // 確保 X 間隙不超過直徑
             let gap = next.x - (current.x + current.w);
             if (gap > DIA) {
-                current.w = (next.x - current.x) + 5; // 稍微多給一點，確保覆蓋
+                current.w = (next.x - current.x) + 10; 
             }
 
-            // 2. 後音板的前方應「往前延伸」超過前音板末端至少兩個半直徑 (50px)
-            // 我們透過微調 next.x 和 next.w 來實現，而不改變音符觸發點
+            // 後音板前方重疊兩半直徑 (50px)
             let currentEnd = current.x + current.w;
             let requiredStart = currentEnd - OVERLAP;
             
             if (next.x > requiredStart) {
                 let diff = next.x - requiredStart;
-                next.x = requiredStart; // 往前拉
-                next.w += diff; // 補回寬度確保末端不變
+                next.x = requiredStart;
+                next.w += diff; // 補償寬度，保持音符末端同步
             }
         }
 
@@ -112,28 +142,39 @@ function buildPaths(midi) {
 
 function startRolling() {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
     isRunning = true;
     document.getElementById('playBtn').style.display = 'none';
+    document.getElementById('status').innerText = "正在進行物理校準演奏...";
 }
 
 function startRecording() {
     chunks = [];
     const stream = canvas.captureStream(60);
-    recorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
-    recorder.ondataavailable = e => chunks.push(e.data);
+    const mimeType = MediaRecorder.isTypeSupported('video/mp4') ? 'video/mp4' : 'video/webm';
+    recorder = new MediaRecorder(stream, { mimeType });
+    recorder.ondataavailable = e => { if(e.data.size > 0) chunks.push(e.data); };
     recorder.onstop = () => {
-        const blob = new Blob(chunks, { type: 'video/mp4' });
+        const blob = new Blob(chunks, { type: mimeType });
         const url = URL.createObjectURL(blob);
-        const a = document.createElement('a'); a.href = url; a.download = 'perfect_run.mp4'; a.click();
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `music_performance.${mimeType.split('/')[1]}`;
+        a.click();
     };
     recorder.start();
     perfectReplay();
+    document.getElementById('status').innerText = "🔴 錄製中，結束後將自動下載。";
 }
 
 function perfectReplay() {
     tracks.forEach(t => {
+        // 修正 Y 軸偏移
         t.steps.forEach((s, i) => { if (!s.wasHit && i > 0) s.y = t.steps[i-1].y + 12; });
-        t.currentIdx = 0; t.ball.x = t.steps[0].x; t.ball.y = t.steps[0].y - 80; t.ball.vy = 0;
+        t.currentIdx = 0; 
+        t.ball.x = t.steps[0].x; 
+        t.ball.y = t.steps[0].y - 80; 
+        t.ball.vy = 0;
         t.steps.forEach(s => { s.wasHit = false; s.active = 0; });
     });
     isRunning = true;
@@ -147,7 +188,6 @@ function update() {
         let target = t.steps[t.currentIdx];
         if (target) {
             allFinished = false;
-            // 判定範圍優化
             if (b.x > target.x && b.x < target.x + target.w && b.y + b.r > target.y - 5 && b.vy >= 0) {
                 b.y = target.y - b.r; b.vy = 0; target.wasHit = true;
                 if (target.active === 0) {
@@ -163,7 +203,7 @@ function update() {
         isRunning = false;
         if (recorder && recorder.state === "recording") recorder.stop();
         document.getElementById('recordBtn').style.display = "inline-block";
-        document.getElementById('status').innerText = "修正完畢，物理重疊已達標。";
+        document.getElementById('status').innerText = "校準完畢！建議使用「錄製 MP4」分享。";
     }
 
     const redBall = tracks[0].ball;
