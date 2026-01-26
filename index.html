@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴機 3.0 - 絕對對齊版</title>
+    <title>AI 木琴機 3.1 - 物理校準版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         body { margin: 0; background: #020617; overflow: hidden; display: flex; flex-direction: column; height: 100vh; }
@@ -29,10 +29,10 @@ const ctx = canvas.getContext('2d');
 let audioCtx = null, tracks = [], isRunning = false;
 let camX = 0, camY = 0;
 
-// ⚙️ 核心物理常量 (嚴禁隨意更改，確保彈跳軌跡)
-const GRAVITY = 0.4;
-const JUMP = -9;
-const SPEED_X = 5.5; 
+// ⚙️ 嚴格物理參數 (修正拋物線)
+const GRAVITY = 0.42;
+const JUMP = -9.2;
+const SPEED_X = 5.2; 
 
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
@@ -42,46 +42,35 @@ const midiToFreq = (m) => 440 * Math.pow(2, (m - 69) / 12);
 document.getElementById('midiUpload').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    document.getElementById('status').innerText = "精準校對中...";
     const midi = await Midi.fromUrl(URL.createObjectURL(file));
     setupPerfectPhysics(midi);
     document.getElementById('startBtn').style.display = "inline-block";
-    document.getElementById('status').innerText = "校對完成，請啟動";
+    document.getElementById('status').innerText = "物理路徑已鎖定，請點擊啟動";
 });
 
 function setupPerfectPhysics(midi) {
     tracks = [];
     const colors = ["#f87171", "#60a5fa", "#fbbf24", "#34d399"];
-    
-    // 找出所有軌道中最先開始的時間點
     let firstNoteTime = Infinity;
-    midi.tracks.forEach(t => {
-        if (t.notes.length > 0 && t.notes[0].time < firstNoteTime) {
-            firstNoteTime = t.notes[0].time;
-        }
-    });
+    midi.tracks.forEach(t => { if (t.notes.length > 0 && t.notes[0].time < firstNoteTime) firstNoteTime = t.notes[0].time; });
 
     midi.tracks.filter(t => t.notes.length > 0).slice(0, 4).forEach((track, tIdx) => {
-        const laneBaseY = 200 + (tIdx * 400);
+        const laneBaseY = 200 + (tIdx * 450);
         let steps = [];
-        
         track.notes.forEach((note, nIdx) => {
-            // 💡 關鍵校準：(note.time - firstNoteTime) 確保第一顆音從 X=400 開始
             steps.push({
-                x: 400 + (note.time - firstNoteTime) * (SPEED_X * 60), 
-                y: laneBaseY + (nIdx * 48), // 逐板下沉提供位能
-                w: 120, h: 18, 
-                freq: midiToFreq(note.midi), 
-                active: 0
+                x: 300 + (note.time - firstNoteTime) * (SPEED_X * 60), 
+                y: laneBaseY + (nIdx * 52), // 加深階梯落差
+                w: 130, h: 20, 
+                freq: midiToFreq(note.midi), active: 0
             });
         });
-
         const first = steps[0];
         tracks.push({
             steps,
             ball: { 
-                x: first.x, 
-                y: first.y - 300, // 從第一塊板子上方 300 像素落下
+                x: first.x + 20, // 稍微偏向板子中心
+                y: first.y - 400, // 高度落差增加，給予重力加速度空間
                 vx: SPEED_X, vy: 0, r: 12, color: colors[tIdx] 
             },
             currentIdx: 0,
@@ -105,9 +94,9 @@ function update() {
 
         let target = t.steps[t.currentIdx];
         if (target) {
-            // 物理判定：當球在板子寬度內且正在下墜穿過板子高度時
-            if (b.x > target.x && b.x < target.x + target.w && 
-                b.y + b.r > target.y && b.y < target.y + target.h && b.vy > 0) {
+            // 判定優化：寬容度檢測 (防止穿透)
+            if (b.x + b.r > target.x && b.x - b.r < target.x + target.w && 
+                b.y + b.r > target.y && b.y - b.r < target.y + target.h && b.vy > 0) {
                 
                 b.y = target.y - b.r;
                 b.vy = JUMP; 
@@ -123,18 +112,20 @@ function update() {
                 
                 t.currentIdx++;
             }
-        }
-        
-        // 如果掉下去了 (保險機制)
-        if (target && b.y > target.y + 800) {
-            b.x = target.x; b.y = target.y - 200; b.vy = 0;
+            
+            // 如果墜出視線 (重生點設在目前目標上方，防止無限循環落下)
+            if (b.y > target.y + 600) {
+                b.x = target.x; 
+                b.y = target.y - 250; 
+                b.vy = 0; 
+            }
         }
     });
 
-    // 🎥 攝影機跟隨第一顆球 (球心跟隨)
+    // 🎥 攝影機：球心鎖定
     if (tracks[0]) {
-        camX += (tracks[0].ball.x - canvas.width / 2 - camX) * 0.1;
-        camY += (tracks[0].ball.y - canvas.height / 2 - camY) * 0.1;
+        camX += (tracks[0].ball.x - canvas.width * 0.3 - camX) * 0.1; // 球在畫面偏左一點，看得到前方板子
+        camY += (tracks[0].ball.y - canvas.height * 0.4 - camY) * 0.1;
     }
 }
 
@@ -145,14 +136,16 @@ function draw() {
 
     tracks.forEach(t => {
         t.steps.forEach(s => {
-            if (Math.abs(s.x - camX) < canvas.width) {
+            if (s.x > camX - 200 && s.x < camX + canvas.width + 200) {
                 ctx.fillStyle = s.active > 0 ? "#fff" : t.ball.color;
                 if(s.active > 0) s.active--;
-                ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, s.h, 5); ctx.fill();
+                ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, s.h, 6); ctx.fill();
             }
         });
         ctx.fillStyle = t.ball.color;
+        ctx.shadowBlur = 10; ctx.shadowColor = t.ball.color;
         ctx.beginPath(); ctx.arc(t.ball.x, t.ball.y, t.ball.r, 0, Math.PI*2); ctx.fill();
+        ctx.shadowBlur = 0;
     });
 
     ctx.restore();
