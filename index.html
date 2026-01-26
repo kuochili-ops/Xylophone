@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴機 6.9 - 第一音自動校準版</title>
+    <title>AI 木琴機 7.0 - 全程完美校準版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         body { margin: 0; background: #020617; overflow: hidden; display: flex; flex-direction: column; height: 100vh; }
@@ -17,7 +17,7 @@
 <div class="panel">
     <input type="file" id="midiUpload" accept=".mid,.midi" style="display:none">
     <button onclick="document.getElementById('midiUpload').click()">📁 1. 上傳 MIDI</button>
-    <button id="startBtn" onclick="runFullProcess()" style="background:#f43f5e; display:none;">🚀 啟動自動校準演奏</button>
+    <button id="startBtn" onclick="runFullProcess()" style="background:#f43f5e; display:none;">🚀 啟動全程校準演奏</button>
     <div id="info"></div>
 </div>
 <canvas id="mainCanvas"></canvas>
@@ -28,12 +28,13 @@ const ctx = canvas.getContext('2d');
 let audioCtx = null, tracks = [], isRunning = false;
 let camX = 0, camY = 0;
 
-// ⚙️ 核心物理參數 (全面 0.1x)
+// ⚙️ 全面 0.1x 物理基準
 const TIME_SCALE = 0.1;
 const GRAVITY = 0.45 * TIME_SCALE;
 const FALL_PUSH = 1.5 * TIME_SCALE;
 let adaptiveVX = 0.5;
 let originalMidi = null;
+let retryCount = 0;
 
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
@@ -46,19 +47,19 @@ document.getElementById('midiUpload').addEventListener('change', async (e) => {
     originalMidi = await Midi.fromUrl(URL.createObjectURL(file));
     const bpm = originalMidi.header.tempos[0] ? originalMidi.header.tempos[0].bpm : 120;
     
-    // 初次計算速度
     adaptiveVX = (bpm / 60) * 40 * TIME_SCALE; 
+    retryCount = 0;
     initSimulation();
     document.getElementById('startBtn').style.display = "inline-block";
 });
 
 function initSimulation() {
     if (!originalMidi) return;
-    document.getElementById('info').innerText = `正在校準第一音... VX: ${adaptiveVX.toFixed(4)}`;
-    setupStableStairs(originalMidi);
+    document.getElementById('info').innerText = `校準中 (第${retryCount}次)... VX: ${adaptiveVX.toFixed(4)}`;
+    setupStairs(originalMidi);
 }
 
-function setupStableStairs(midi) {
+function setupStairs(midi) {
     tracks = [];
     const mainTrack = midi.tracks.find(t => t.notes.length > 5) || midi.tracks[0];
     let notes = [...mainTrack.notes].sort((a, b) => a.time - b.time);
@@ -66,16 +67,16 @@ function setupStableStairs(midi) {
     let steps = [];
     let currentX = 400;
 
-    // 💡 第一塊是無聲助跑板
+    // 起始助跑板
     steps.push({ x: currentX, y: 300, w: 100, h: 12, isSilent: true, active: 0 });
     currentX += 100;
 
     notes.forEach((note, i) => {
         const width = note.duration * adaptiveVX * 60;
-        const finalWidth = Math.max(30, width);
+        const finalWidth = Math.max(35, width);
         steps.push({
             x: currentX, 
-            y: 300 + ((i + 1) * 30), 
+            y: 300 + ((i + 1) * 32), 
             w: finalWidth, h: 12, 
             freq: midiToFreq(note.midi), duration: note.duration,
             isSilent: false, active: 0
@@ -91,7 +92,7 @@ function setupStableStairs(midi) {
 }
 
 function runFullProcess() {
-    if (!audioCtx) audioCtx = new AudioContext();
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     isRunning = true;
     document.getElementById('startBtn').style.display = "none";
 }
@@ -103,15 +104,18 @@ function update() {
         let b = t.ball;
         let target = t.steps[t.currentIdx];
 
-        // 💡 [重要] 飛越第一音偵測邏輯
-        // 如果球已經走過了第一塊助跑板 (target 變成 steps[1])，
-        // 但球的 X 座標卻超過了 steps[1] 的範圍卻還沒碰到它
-        let firstSoundPlate = t.steps[1];
-        if (t.currentIdx === 1 && b.x > firstSoundPlate.x + firstSoundPlate.w && b.vy > 0) {
-            console.log("偵測到飛越第一音！自動減速重來...");
-            adaptiveVX *= 0.9; // 減速 10%
-            initSimulation();  // 重啟模擬
-            return;
+        // 💡 全程失效偵測邏輯
+        if (target) {
+            // 1. 飛越偵測：如果球的 X 已經超過目前這塊板子的範圍，且還沒踩上去
+            if (!b.isRolling && b.x > target.x + target.w) {
+                triggerRetry("飛越音板");
+                return;
+            }
+            // 2. 穿模偵測：如果球掉得比目前板子還要低，卻還沒踩上去
+            if (!b.isRolling && b.y > target.y + 20) {
+                triggerRetry("漏敲音板");
+                return;
+            }
         }
 
         if (b.isRolling && target) {
@@ -143,13 +147,20 @@ function update() {
     }
 }
 
+function triggerRetry(reason) {
+    console.warn(`[${reason}] 自動調降速度並重來...`);
+    retryCount++;
+    adaptiveVX *= 0.95; // 每次失敗微調降速 5%，精細找尋落點
+    initSimulation();
+}
+
 function playAmbientTone(freq, dur) {
     const osc = audioCtx.createOscillator();
     const g = audioCtx.createGain();
     osc.type = 'sine';
     osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
     g.gain.setValueAtTime(0, audioCtx.currentTime);
-    g.gain.linearRampToValueAtTime(0.08, audioCtx.currentTime + 0.2);
+    g.gain.linearRampToValueAtTime(0.08, audioCtx.currentTime + 0.1);
     g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur + 4.0);
     osc.connect(g); g.connect(audioCtx.destination);
     osc.start(); osc.stop(audioCtx.currentTime + dur + 4.5);
@@ -169,7 +180,7 @@ function draw() {
             }
         });
         ctx.fillStyle = t.ball.color;
-        ctx.shadowBlur = 20; ctx.shadowColor = t.ball.color;
+        ctx.shadowBlur = 15; ctx.shadowColor = t.ball.color;
         ctx.beginPath(); ctx.arc(t.ball.x, t.ball.y, t.ball.r, 0, Math.PI*2); ctx.fill();
         ctx.shadowBlur = 0;
     });
