@@ -2,14 +2,13 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴機 2.0 - BPM 動態感應版</title>
+    <title>AI 木琴機 2.0 - 快板精確縮短版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         body { margin: 0; background: #020617; color: #fff; font-family: sans-serif; overflow: hidden; }
         .ui { position: fixed; top: 15px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; z-index: 100; background: rgba(15, 23, 42, 0.9); padding: 12px 24px; border-radius: 40px; border: 1px solid #3b82f6; }
         button { border: none; padding: 8px 24px; border-radius: 20px; cursor: pointer; font-weight: bold; color: white; background: #3b82f6; transition: 0.3s; }
-        button:hover { background: #2563eb; transform: scale(1.05); }
-        #status { position: fixed; bottom: 20px; width: 100%; text-align: center; color: #60a5fa; font-size: 13px; font-family: monospace; }
+        #status { position: fixed; bottom: 20px; width: 100%; text-align: center; color: #60a5fa; font-size: 13px; }
     </style>
 </head>
 <body>
@@ -20,7 +19,7 @@
     <button id="playBtn" onclick="startRolling()" style="background:#f43f5e; display:none;">🚀 啟動演奏</button>
 </div>
 
-<div id="status">BPM 偵測系統就緒...</div>
+<div id="status">快板邏輯：縮短音板長度以增強節奏視覺感。</div>
 <canvas id="stage"></canvas>
 
 <script>
@@ -38,23 +37,18 @@ document.getElementById('midiFile').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     const midi = await Midi.fromUrl(URL.createObjectURL(file));
-    
-    // 偵測 BPM
     globalBPM = Math.round(midi.header.tempos[0]?.bpm || 120);
-    document.getElementById('status').innerText = `偵測到節拍: ${globalBPM} BPM | 正在計算物理軌道...`;
-    
-    buildBPMPaths(midi);
+    buildFastTempoPaths(midi);
     document.getElementById('playBtn').style.display = "inline-block";
 });
 
-function buildBPMPaths(midi) {
+function buildFastTempoPaths(midi) {
     tracks = [];
     const colors = ["#fb7185", "#38bdf8"];
     const BALL_R = 10;
-    const MAX_GAP = BALL_R * 2; 
+    const MAX_GAP = BALL_R * 1.5; 
 
-    // 根據 BPM 調整縮放係數 (快歌時軌道密度更高)
-    const timeScale = 650; 
+    const timeScale = 700; 
 
     midi.tracks.filter(t => t.notes.length > 0).slice(0, 2).forEach((track, tIdx) => {
         let steps = [];
@@ -64,25 +58,26 @@ function buildBPMPaths(midi) {
             const x = 500 + note.time * timeScale;
             const pitchOffset = (72 - note.midi) * 3.5;
             
-            // 規則 1：單向下滑
-            let targetY = lastY + 35 + pitchOffset; 
-            if (targetY <= lastY) targetY = lastY + 12;
+            // 規則：單向下滑
+            let targetY = lastY + 32 + pitchOffset; 
+            if (targetY <= lastY) targetY = lastY + 10;
 
-            let w = note.duration * timeScale;
+            // --- 核心改進：縮短快板音板 ---
+            // 稍微降低寬度乘法係數，讓短音符看起來更精簡
+            let w = Math.max(25, note.duration * 500); 
 
-            // 規則 2：極窄間距 (自動延長前一塊板子)
+            // 確保間距緊湊
             if (nIdx > 0) {
                 const prev = steps[nIdx - 1];
                 const gap = x - (prev.x + prev.w);
-                if (gap > MAX_GAP) prev.w = (x - prev.x) - (MAX_GAP * 0.5);
+                if (gap > MAX_GAP) prev.w = (x - prev.x) - (MAX_GAP * 0.4);
             }
 
             steps.push({ x, y: targetY, w, h: 12, freq: getFreq(note.midi), active: 0 });
             lastY = targetY;
         });
 
-        // 根據 BPM 動態計算球速 (基準 120BPM = 5.8 速度)
-        const vx = (globalBPM / 120) * 5.8;
+        const vx = (globalBPM / 120) * 6.2;
 
         tracks.push({
             steps,
@@ -105,21 +100,22 @@ function update() {
 
     tracks.forEach(t => {
         let b = t.ball;
-        b.vy += 0.48; b.x += b.vx; b.y += b.vy;
+        b.vy += 0.52; // 稍微增加重力，讓換板下落更快更清脆
+        b.x += b.vx;
+        b.y += b.vy;
 
         let target = t.steps[t.currentIdx];
         if (target) {
-            // 滾動判定
-            if (b.x > target.x - 8 && b.x < target.x + target.w + 8 && 
+            if (b.x > target.x - 5 && b.x < target.x + target.w + 5 && 
                 b.y + b.r > target.y && b.y < target.y + 20 && b.vy >= 0) {
                 b.y = target.y - b.r; b.vy = 0;
                 if (target.active === 0) {
                     const o = audioCtx.createOscillator(), g = audioCtx.createGain();
                     o.type = t.oscType; o.frequency.setValueAtTime(target.freq, audioCtx.currentTime);
                     g.gain.setValueAtTime(0.08, audioCtx.currentTime);
-                    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
+                    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
                     o.connect(g); g.connect(audioCtx.destination);
-                    o.start(); o.stop(audioCtx.currentTime + 0.4);
+                    o.start(); o.stop(audioCtx.currentTime + 0.3);
                     target.active = 20;
                 }
             }
@@ -129,19 +125,16 @@ function update() {
         minY = Math.min(minY, b.y); maxY = Math.max(maxY, b.y);
     });
 
-    // 攝像機跟隨
-    camX += ((minX + maxX)/2 - canvas.width/2 - camX) * 0.1;
+    camX += ((minX + maxX)/2 - canvas.width/2 - camX) * 0.12;
     camY += ((minY + maxY)/2 - canvas.height/2 - camY) * 0.08;
     
-    // 動態變焦：根據兩球垂直距離調整
-    const targetZoom = Math.max(0.6, Math.min(1.1, canvas.height / ((maxY - minY) + 400)));
+    const targetZoom = Math.max(0.7, Math.min(1.1, canvas.height / ((maxY - minY) + 350)));
     zoom += (targetZoom - zoom) * 0.05;
 }
 
 function draw() {
     ctx.fillStyle = "#020617"; ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.save();
-    
     ctx.translate(canvas.width/2, canvas.height/2);
     ctx.scale(zoom, zoom);
     ctx.translate(-canvas.width/2, -canvas.height/2);
@@ -149,14 +142,12 @@ function draw() {
 
     tracks.forEach(t => {
         t.steps.forEach(s => {
-            ctx.fillStyle = s.active > 0 ? "#fff" : t.ball.color + "44";
+            ctx.fillStyle = s.active > 0 ? "#fff" : t.ball.color + "55";
             if(s.active > 0) s.active--;
-            ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, s.h, 3); ctx.fill();
+            ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, s.h, 2); ctx.fill();
         });
         ctx.fillStyle = t.ball.color;
-        ctx.shadowBlur = 10; ctx.shadowColor = t.ball.color;
         ctx.beginPath(); ctx.arc(t.ball.x, t.ball.y, t.ball.r, 0, Math.PI*2); ctx.fill();
-        ctx.shadowBlur = 0;
     });
 
     ctx.restore();
