@@ -2,100 +2,112 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴機 2.0 - 物理修正版</title>
+    <title>AI 木琴機 2.0 - 自行校準模組</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         body { margin: 0; background: #020617; color: #fff; font-family: sans-serif; overflow: hidden; }
-        .ui { position: fixed; top: 15px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 10px; z-index: 100; background: rgba(15, 23, 42, 0.9); padding: 15px 25px; border-radius: 20px; border: 1px solid #3b82f6; align-items: center; }
-        .controls { display: flex; gap: 15px; align-items: center; }
+        .ui { position: fixed; top: 15px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; z-index: 100; background: rgba(15, 23, 42, 0.9); padding: 12px 24px; border-radius: 40px; border: 1px solid #3b82f6; align-items: center; }
         button { border: none; padding: 8px 20px; border-radius: 20px; cursor: pointer; font-weight: bold; color: white; background: #3b82f6; }
-        #status { position: fixed; bottom: 20px; width: 100%; text-align: center; color: #60a5fa; font-size: 13px; }
-        input[type=range] { width: 150px; }
+        #status { position: fixed; bottom: 20px; width: 100%; text-align: center; color: #60a5fa; font-size: 13px; white-space: pre-line; }
     </style>
 </head>
 <body>
 
 <div class="ui">
-    <div class="controls">
-        <input type="file" id="midiFile" accept=".mid,.midi" style="display:none">
-        <button onclick="document.getElementById('midiFile').click()">📁 重新載入 MIDI</button>
-        <button id="playBtn" onclick="startRolling()" style="background:#f43f5e; display:none;">🚀 啟動修正演奏</button>
-        <div style="display:flex; flex-direction:column; align-items:center;">
-            <label style="font-size:12px;">速度控制</label>
-            <input type="range" id="speedSlider" min="0.5" max="2.0" step="0.1" value="1.0">
-        </div>
-    </div>
+    <input type="file" id="midiFile" accept=".mid,.midi" style="display:none">
+    <button onclick="document.getElementById('midiFile').click()">📁 載入 MIDI</button>
+    <button id="playBtn" onclick="startRolling()" style="background:#f43f5e; display:none;">🚀 開始訓練演奏</button>
+    <button onclick="resetPerformance()" style="background:#64748b;">🔄 重來並修正</button>
 </div>
 
-<div id="status">修正機制：已開啟自動落點吸附與空隙補間。</div>
+<div id="status">等待載入音樂...</div>
 <canvas id="stage"></canvas>
 
 <script>
 const canvas = document.getElementById('stage');
 const ctx = canvas.getContext('2d');
 let audioCtx = null, tracks = [], isRunning = false, midiData = null;
-let camX = 0, camY = 0, zoom = 1, globalBPM = 120, speedMult = 1.0;
+let camX = 0, camY = 0, zoom = 1;
+const BALL_VX = 4.0; // 固定球速，較慢且穩定
 
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
 const getFreq = (m) => 440 * Math.pow(2, (m - 69) / 12);
 
-document.getElementById('speedSlider').addEventListener('input', (e) => {
-    speedMult = parseFloat(e.target.value);
-    if (midiData) buildCorrectedPaths(midiData);
-});
-
 document.getElementById('midiFile').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     midiData = await Midi.fromUrl(URL.createObjectURL(file));
-    globalBPM = Math.round(midiData.header.tempos[0]?.bpm || 120);
-    buildCorrectedPaths(midiData);
+    buildLearningPaths(midiData);
     document.getElementById('playBtn').style.display = "inline-block";
+    document.getElementById('status').innerText = "已載入。如果球沒敲到音板，請點擊「重來並修正」。";
 });
 
-function buildCorrectedPaths(midi) {
+function buildLearningPaths(midi) {
     tracks = [];
     const colors = ["#fb7185", "#38bdf8"];
     const BALL_R = 10;
-    const timeScale = 700 / speedMult;
 
     midi.tracks.filter(t => t.notes.length > 0).slice(0, 2).forEach((track, tIdx) => {
         let steps = [];
-        let lastY = 250 + (tIdx * 180); 
+        let lastY = 250 + (tIdx * 200); 
         
         track.notes.forEach((note, nIdx) => {
-            const x = 500 + (note.time * timeScale);
-            const pitchOffset = (72 - note.midi) * 3.5;
+            // 快慢板完全靠音板長度：X 軸由時間決定，但速度固定
+            const x = 500 + (note.time * 450); 
+            const pitchY = (72 - note.midi) * 4;
             
-            // 規則 1：強制下滑且落差標準化
-            let targetY = lastY + 30 + pitchOffset; 
-            if (targetY <= lastY) targetY = lastY + 8;
+            // 基礎下滑位置
+            let targetY = lastY + 30 + pitchY;
+            if (targetY <= lastY) targetY = lastY + 10;
 
-            // 規則 2：縮短音板長度 (快板邏輯)
-            let w = Math.max(25, note.duration * (450 / speedMult)); 
+            let w = Math.max(30, note.duration * 400); 
 
-            // 規則 3：極窄間距修正 (防止球掉落空隙)
-            if (nIdx > 0) {
-                const prev = steps[nIdx - 1];
-                const gap = x - (prev.x + prev.w);
-                if (gap > BALL_R) {
-                    prev.w = (x - prev.x) - (BALL_R * 0.5); // 讓前一塊板子幾乎碰到下一塊
-                }
-            }
-
-            steps.push({ x, y: targetY, w, h: 12, freq: getFreq(note.midi), active: 0 });
+            steps.push({ 
+                x, y: targetY, w, h: 12, 
+                freq: getFreq(note.midi), 
+                active: 0, 
+                wasHit: false // 紀錄這塊板子是否被敲擊過
+            });
             lastY = targetY;
         });
 
         tracks.push({
             steps,
-            ball: { x: steps[0].x, y: steps[0].y - 50, vx: (globalBPM / 120) * 6.0, vy: 0, r: BALL_R, color: colors[tIdx] },
+            ball: { x: steps[0].x, y: steps[0].y - 60, vx: BALL_VX, vy: 0, r: BALL_R, color: colors[tIdx] },
             currentIdx: 0,
             oscType: tIdx === 0 ? 'triangle' : 'sine'
         });
     });
+}
+
+function resetPerformance() {
+    if (!midiData) return;
+    
+    // 修正邏輯：遍歷所有音板，如果 wasHit 為 false，自動調整高度
+    tracks.forEach(track => {
+        track.steps.forEach((step, i) => {
+            if (!step.wasHit && i > 0) {
+                // 如果沒敲到，讓它稍微往「上一塊板子」的高度靠攏，並延長寬度增加接觸機率
+                const prev = track.steps[i-1];
+                step.y = (step.y + prev.y) / 2 + 10; 
+                step.w += 20;
+                step.x -= 10;
+            }
+            step.active = 0;
+            step.wasHit = false; // 重置狀態準備下一輪測試
+        });
+        
+        // 重置球的位置
+        const first = track.steps[0];
+        track.ball.x = first.x;
+        track.ball.y = first.y - 60;
+        track.ball.vy = 0;
+        track.currentIdx = 0;
+    });
+    
+    document.getElementById('status').innerText = "已根據上一輪失誤修正音板位置。再次演奏中...";
 }
 
 function startRolling() {
@@ -110,62 +122,47 @@ function update() {
 
     tracks.forEach(t => {
         let b = t.ball;
-        b.vy += 0.5; b.x += b.vx; b.y += b.vy;
+        b.vy += 0.45; b.x += b.vx; b.y += b.vy;
 
         let target = t.steps[t.currentIdx];
         if (target) {
-            // --- 關鍵修正：吸附與判定範圍擴大 ---
-            // 檢查球是否在音板高度附近，且水平位置已達音板
-            const isAbove = b.y + b.r > target.y - 10 && b.y < target.y + 20;
-            const isInside = b.x > target.x - 15 && b.x < target.x + target.w + 15;
-
-            if (isInside && isAbove && b.vy >= 0) {
-                b.y = target.y - b.r; // 強制吸附到板面
+            // 物理判定
+            if (b.x > target.x - 5 && b.x < target.x + target.w + 5 && 
+                b.y + b.r > target.y && b.y < target.y + 20 && b.vy >= 0) {
+                
+                b.y = target.y - b.r;
                 b.vy = 0;
+                target.wasHit = true; // 標記已成功敲擊
+
                 if (target.active === 0) {
                     const o = audioCtx.createOscillator(), g = audioCtx.createGain();
                     o.type = t.oscType; o.frequency.setValueAtTime(target.freq, audioCtx.currentTime);
                     g.gain.setValueAtTime(0.08, audioCtx.currentTime);
-                    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
+                    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
                     o.connect(g); g.connect(audioCtx.destination);
-                    o.start(); o.stop(audioCtx.currentTime + 0.3);
+                    o.start(); o.stop(audioCtx.currentTime + 0.4);
                     target.active = 20;
                 }
             }
-            
-            // 自動跳轉下一個音板 (如果球已經滾過頭)
-            if (b.x > target.x + target.w + 10) {
-                t.currentIdx++;
-            }
+            if (b.x > target.x + target.w + 5) t.currentIdx++;
         }
-        
-        // 防呆重生：如果真的掉下去了，閃現到下一塊音板
-        if (target && b.y > target.y + 300) {
-            b.y = target.y - 100;
-            b.x = target.x - 20;
-            b.vy = 0;
-        }
-
         minX = Math.min(minX, b.x); maxX = Math.max(maxX, b.x);
         minY = Math.min(minY, b.y); maxY = Math.max(maxY, b.y);
     });
 
-    camX += ((minX + maxX)/2 - canvas.width/2 - camX) * 0.15;
-    camY += ((minY + maxY)/2 - canvas.height/2 - camY) * 0.1;
-    zoom += (Math.max(0.6, Math.min(1.1, canvas.height / ((maxY - minY) + 400))) - zoom) * 0.05;
+    camX += ((minX + maxX)/2 - canvas.width/2 - camX) * 0.1;
+    camY += ((minY + maxY)/2 - canvas.height/2 - camY) * 0.05;
 }
 
 function draw() {
     ctx.fillStyle = "#020617"; ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.save();
-    ctx.translate(canvas.width/2, canvas.height/2);
-    ctx.scale(zoom, zoom);
-    ctx.translate(-canvas.width/2, -canvas.height/2);
     ctx.translate(-camX, -camY);
 
     tracks.forEach(t => {
         t.steps.forEach(s => {
-            ctx.fillStyle = s.active > 0 ? "#fff" : t.ball.color + "55";
+            // 未被敲擊過的音板顯示得稍微黯淡，方便觀察
+            ctx.fillStyle = s.active > 0 ? "#fff" : (s.wasHit ? t.ball.color : t.ball.color + "33");
             if(s.active > 0) s.active--;
             ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, s.h, 4); ctx.fill();
         });
