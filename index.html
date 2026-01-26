@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴機 6.1 - 助跑滑行版</title>
+    <title>AI 木琴機 6.2 - 無縫階梯滑道</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         body { margin: 0; background: #020617; overflow: hidden; display: flex; flex-direction: column; height: 100vh; }
@@ -16,7 +16,7 @@
 <div class="panel">
     <input type="file" id="midiUpload" accept=".mid,.midi" style="display:none">
     <button onclick="document.getElementById('midiUpload').click()">📁 1. 上傳 MIDI</button>
-    <button id="startBtn" onclick="runFullProcess()" style="background:#f43f5e; display:none;">🚀 啟動滑行演奏</button>
+    <button id="startBtn" onclick="runFullProcess()" style="background:#f43f5e; display:none;">🚀 啟動無縫滑行</button>
 </div>
 <canvas id="mainCanvas"></canvas>
 
@@ -26,7 +26,8 @@ const ctx = canvas.getContext('2d');
 let audioCtx = null, tracks = [], isRunning = false;
 let camX = 0, camY = 0;
 
-const GRAVITY = 0.45, JUMP = -9.5, BASE_SPEED_X = 5.2; 
+const GRAVITY = 0.5; 
+const BASE_SPEED_X = 5.0; // 穩定的滾動速度
 
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
@@ -37,75 +38,63 @@ document.getElementById('midiUpload').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     const midi = await Midi.fromUrl(URL.createObjectURL(file));
-    setupPerfectRollingData(midi);
+    setupContinuousStairs(midi);
     document.getElementById('startBtn').style.display = "inline-block";
 });
 
-function setupPerfectRollingData(midi) {
+function setupContinuousStairs(midi) {
     tracks = [];
-    const mainTrack = midi.tracks.find(t => !t.notes.length > 5) || midi.tracks[0];
+    const mainTrack = midi.tracks.find(t => t.notes.length > 5) || midi.tracks[0];
     let rawNotes = [...mainTrack.notes].sort((a, b) => a.time - b.time);
+    
+    // 過濾極短時間內的重複音
     let filtered = [];
     rawNotes.forEach(n => {
-        if (filtered.length === 0 || n.time - filtered[filtered.length-1].time > 0.06) {
+        if (filtered.length === 0 || n.time - filtered[filtered.length-1].time > 0.05) {
             filtered.push(n);
         }
     });
 
-    let startTime = filtered[0].time;
     let steps = [];
+    let currentX = 400; // 起始位置
 
-    // 💡 增加「起始助跑板」：無聲、中等長度
+    // 1. 助跑板 (無聲)
     steps.push({
-        x: 400, y: 350, w: 120, h: 18, 
-        isSilent: true, isSequence: true, active: 0, freq: 0
+        x: currentX, y: 300, w: 150, h: 15, 
+        isSilent: true, active: 0, freq: 0
     });
+    currentX += 150;
 
+    // 2. 根據 MIDI 生成無縫板塊
     filtered.forEach((note, i) => {
-        const next = filtered[i+1];
-        const isSeq = next ? (next.time - note.time < 0.28) : false;
+        // 音板寬度直接對應音符持續時間 (維持節奏)
+        // 使用 60fps 下的位移來計算寬度
+        const width = note.duration * BASE_SPEED_X * 60;
+        const minWidth = 40; // 確保極短音也有板子
+        const finalWidth = Math.max(minWidth, width);
+
         steps.push({
-            x: 0, 
-            time: note.time - startTime,
-            y: 350 + ((i + 1) * 65), 
-            w: Math.max(60, note.duration * 320), // 長短音決定板長
-            h: 18, 
+            x: currentX, 
+            y: 300 + ((i + 1) * 55), // 穩定的階梯高度差
+            w: finalWidth, 
+            h: 15, 
             freq: midiToFreq(note.midi),
             duration: note.duration,
-            isSequence: isSeq,
             isSilent: false,
             active: 0
         });
+        currentX += finalWidth; // 💡 無縫連接：下一塊板子緊接在這一塊末尾
     });
 
     tracks.push({
         steps,
-        ball: { x: 410, y: 330, vx: BASE_SPEED_X, vy: 0, r: 11, color: "#f87171" },
+        ball: { x: 405, y: 280, vx: BASE_SPEED_X, vy: 0, r: 10, color: "#f87171" },
         currentIdx: 0
-    });
-}
-
-function preCalculatePaths() {
-    tracks.forEach(t => {
-        // 從第二塊板子開始對齊（第一塊已固定在 400）
-        for (let i = 1; i < t.steps.length; i++) {
-            let prev = t.steps[i-1];
-            let curr = t.steps[i];
-            
-            // 緊湊對齊：若是連續滾動，間距極小
-            let gap = prev.isSequence ? 20 : 150; 
-            curr.x = prev.x + prev.w + gap;
-        }
-        // 重置球到助跑板起點
-        t.ball.x = t.steps[0].x + 5;
-        t.ball.y = t.steps[0].y - 30;
-        t.currentIdx = 0;
     });
 }
 
 function runFullProcess() {
     if (!audioCtx) audioCtx = new AudioContext();
-    preCalculatePaths();
     isRunning = true;
     document.getElementById('startBtn').style.display = "none";
 }
@@ -117,40 +106,48 @@ function update() {
         let b = t.ball;
         let target = t.steps[t.currentIdx];
 
-        b.vy += GRAVITY; b.x += b.vx; b.y += b.vy;
+        // 基礎物理：水平勻速，垂直受重力
+        b.vy += GRAVITY; 
+        b.x += b.vx; 
+        b.y += b.vy;
 
-        if (target && b.x > target.x - 10 && b.x < target.x + target.w + 10 && 
-            b.y + b.r > target.y && b.y < target.y + target.h + 20 && b.vy > 0) {
-            
+        // 碰撞檢測：只要球在當前板子或下一塊板子的範圍內
+        if (target && b.x >= target.x && b.x <= target.x + target.w) {
+            if (b.y + b.r > target.y && b.vy > 0) {
+                b.y = target.y - b.r;
+                b.vy = 1.5; // 💡 您要求的滾落感：離開板子時的微小下墜力
+
+                if (!target.isSilent) {
+                    playTone(target.freq, target.duration);
+                }
+                target.active = 15;
+                t.currentIdx++;
+            }
+        }
+        
+        // 安全機制：如果球意外穿過階梯，強制修正
+        if (target && b.y > target.y + 100) {
             b.y = target.y - b.r;
-            
-            // 滾落模式：vy = 1.5 產生輕微向下的推力感
-            if (target.isSequence) {
-                b.vy = 1.5; 
-            } else {
-                b.vy = JUMP; 
-            }
-
-            // 敲擊音效 (助跑板不發聲)
-            if (!target.isSilent) {
-                const osc = audioCtx.createOscillator(), g = audioCtx.createGain();
-                osc.type = 'triangle';
-                osc.frequency.setValueAtTime(target.freq, audioCtx.currentTime);
-                g.gain.setValueAtTime(0.12, audioCtx.currentTime);
-                g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + target.duration + 0.1);
-                osc.connect(g); g.connect(audioCtx.destination);
-                osc.start(); osc.stop(audioCtx.currentTime + target.duration + 0.2);
-            }
-            
-            target.active = 15;
-            t.currentIdx++;
+            b.vy = 0;
         }
     });
 
+    // 攝影機追蹤
     if (tracks[0]) {
-        camX += (tracks[0].ball.x - canvas.width * 0.3 - camX) * 0.1;
+        camX += (tracks[0].ball.x - canvas.width * 0.2 - camX) * 0.1;
         camY += (tracks[0].ball.y - canvas.height * 0.5 - camY) * 0.1;
     }
+}
+
+function playTone(freq, dur) {
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    g.gain.setValueAtTime(0.1, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur + 0.1);
+    osc.connect(g); g.connect(audioCtx.destination);
+    osc.start(); osc.stop(audioCtx.currentTime + dur + 0.2);
 }
 
 function draw() {
@@ -160,22 +157,25 @@ function draw() {
 
     tracks.forEach(t => {
         t.steps.forEach((s, i) => {
-            if (Math.abs(i - t.currentIdx) < 40) {
-                // 助跑板用灰色，一般板用藍色
-                if (s.isSilent) {
-                    ctx.fillStyle = "#475569";
-                } else {
-                    ctx.fillStyle = s.active > 0 ? "#fff" : (s.isSequence ? "#38bdf8" : "#1e40af");
-                }
-                if(s.active > 0) s.active--;
-                ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, s.h, 4); ctx.fill();
+            if (Math.abs(i - t.currentIdx) < 50) {
+                // 階梯視覺效果
+                ctx.fillStyle = s.active > 0 ? "#fff" : (s.isSilent ? "#475569" : "#38bdf8");
+                ctx.beginPath(); 
+                ctx.roundRect(s.x, s.y, s.w, s.h, 2); 
+                ctx.fill();
+                
+                // 在板子邊緣畫一條細線，強調階梯感
+                ctx.strokeStyle = "rgba(255,255,255,0.1)";
+                ctx.strokeRect(s.x, s.y, s.w, s.h);
             }
         });
+        
         ctx.fillStyle = t.ball.color;
-        ctx.shadowBlur = 15; ctx.shadowColor = t.ball.color;
+        ctx.shadowBlur = 10; ctx.shadowColor = t.ball.color;
         ctx.beginPath(); ctx.arc(t.ball.x, t.ball.y, t.ball.r, 0, Math.PI*2); ctx.fill();
         ctx.shadowBlur = 0;
     });
+
     ctx.restore();
     update();
     requestAnimationFrame(draw);
