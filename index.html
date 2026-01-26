@@ -2,18 +2,15 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴機 5.0 - 掃描校準版</title>
+    <title>AI 木琴機 5.1 - 背景預算版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         body { margin: 0; background: #020617; overflow: hidden; display: flex; flex-direction: column; height: 100vh; font-family: sans-serif; }
         .panel { background: rgba(15, 23, 42, 0.95); padding: 12px; display: flex; gap: 10px; justify-content: center; z-index: 100; border-bottom: 2px solid #3b82f6; }
         canvas { flex-grow: 1; }
-        button { border: none; padding: 10px 18px; border-radius: 6px; cursor: pointer; font-weight: bold; color: white; background: #3b82f6; }
-        .status-box { position: fixed; top: 70px; left: 20px; background: rgba(0,0,0,0.8); padding: 15px; border-radius: 12px; border: 1px solid #3b82f6; color: #fff; min-width: 200px; }
-        .progress-bar { width: 100%; height: 6px; background: #1e293b; border-radius: 3px; margin-top: 10px; overflow: hidden; }
-        #progressFill { width: 0%; height: 100%; background: #10b981; transition: width 0.3s; }
-        .mode-scan { border-color: #f59e0b !important; color: #f59e0b; }
-        .mode-play { border-color: #10b981 !important; color: #10b981; }
+        button { border: none; padding: 10px 18px; border-radius: 6px; cursor: pointer; font-weight: bold; color: white; background: #3b82f6; transition: 0.3s; }
+        button:hover { background: #2563eb; transform: scale(1.05); }
+        #status { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); color: #60a5fa; background: rgba(0,0,0,0.7); padding: 8px 20px; border-radius: 30px; font-size: 14px; pointer-events: none; }
     </style>
 </head>
 <body>
@@ -21,15 +18,10 @@
 <div class="panel">
     <input type="file" id="midiUpload" accept=".mid,.midi" style="display:none">
     <button onclick="document.getElementById('midiUpload').click()">📁 1. 上傳 MIDI</button>
-    <button id="startBtn" onclick="startWorkflow()" style="background:#f43f5e; display:none;">🚀 啟動自動校準演奏</button>
+    <button id="startBtn" onclick="runFullProcess()" style="background:#f43f5e; display:none;">🚀 2. 計算並演奏</button>
 </div>
 
-<div class="status-box" id="statusBox" style="display:none">
-    <div id="modeTitle" style="font-weight:bold; margin-bottom:5px;">準備中...</div>
-    <div id="modeDetail" style="font-size:12px; opacity:0.8;">等待指令</div>
-    <div class="progress-bar"><div id="progressFill"></div></div>
-</div>
-
+<div id="status">請先上傳 MIDI 檔案</div>
 <canvas id="mainCanvas"></canvas>
 
 <script>
@@ -38,16 +30,10 @@ const ctx = canvas.getContext('2d');
 let audioCtx = null, tracks = [], isRunning = false;
 let camX = 0, camY = 0;
 
-// ⚙️ 正常速度參數
-const BASE_GRAVITY = 0.45;
-const BASE_JUMP = -9.8;
-const BASE_SPEED_X = 5.2;
-
-// 🕹️ 當前運行參數 (會隨模式調整)
-let curGravity = BASE_GRAVITY;
-let curJump = BASE_JUMP;
-let curSpeedX = BASE_SPEED_X;
-let isScanning = true;
+// ⚙️ 固定物理參數 (全速模式)
+const GRAVITY = 0.45;
+const JUMP = -9.8;
+const SPEED_X = 5.5; 
 
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
@@ -58,12 +44,12 @@ document.getElementById('midiUpload').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     const midi = await Midi.fromUrl(URL.createObjectURL(file));
-    setupPhysics(midi);
+    setupInitialData(midi);
     document.getElementById('startBtn').style.display = "inline-block";
-    document.getElementById('statusBox').style.display = "block";
+    document.getElementById('status').innerText = "數據解析完成，準備預算軌跡";
 });
 
-function setupPhysics(midi) {
+function setupInitialData(midi) {
     tracks = [];
     let startTime = Infinity;
     midi.tracks.forEach(t => { if (t.notes.length > 0 && t.notes[0].time < startTime) startTime = t.notes[0].time; });
@@ -73,113 +59,87 @@ function setupPhysics(midi) {
         let steps = [];
         track.notes.forEach((note, nIdx) => {
             steps.push({
-                baseX: 400 + (note.time - startTime) * (BASE_SPEED_X * 60), 
+                x: 400 + (note.time - startTime) * (SPEED_X * 60), 
                 y: laneBaseY + (nIdx * 55), 
-                w: 120, h: 20, freq: midiToFreq(note.midi), active: 0,
-                finalX: 400 + (note.time - startTime) * (BASE_SPEED_X * 60), // 掃描後的完美 X
-                isCalibrated: false
+                w: 120, h: 20, freq: midiToFreq(note.midi), active: 0
             });
         });
-        
         tracks.push({
             steps,
-            ball: { x: steps[0].baseX, y: steps[0].y - 20, vx: 0, vy: 0, r: 12, color: `hsl(${tIdx*90}, 70%, 60%)` },
+            ball: { x: steps[0].x, y: steps[0].y - 20, vx: SPEED_X, vy: JUMP, r: 12, color: `hsl(${tIdx*90}, 70%, 60%)` },
             currentIdx: 0, type: tIdx % 2 === 0 ? 'triangle' : 'sine'
         });
     });
 }
 
-function startWorkflow() {
-    if (!audioCtx) audioCtx = new AudioContext();
-    setMode(true); // 先進入掃描模式
-    isRunning = true;
-    document.getElementById('startBtn').style.display = "none";
+// 🧠 核心：背景瞬間模擬 (Pre-calculation)
+function preCalculatePaths() {
+    tracks.forEach(t => {
+        // 複製一份虛擬球進行模擬
+        let vBall = { x: t.ball.x, y: t.ball.y, vx: t.ball.vx, vy: t.ball.vy };
+        
+        t.steps.forEach((s, idx) => {
+            // 模擬直到球落到目前音板的高度
+            let safety = 0;
+            while ((vBall.y + 12 < s.y || vBall.vy < 0) && safety < 1000) {
+                vBall.vy += GRAVITY;
+                vBall.x += vBall.vx;
+                vBall.y += vBall.vy;
+                safety++;
+            }
+            // 強制修正音板 X 座標到虛擬球的落點中心
+            s.x = vBall.x - s.w / 2;
+            
+            // 模擬反彈
+            vBall.y = s.y - 12;
+            vBall.vy = JUMP;
+        });
+    });
 }
 
-function setMode(scanning) {
-    isScanning = scanning;
-    const title = document.getElementById('modeTitle');
-    const detail = document.getElementById('modeDetail');
-    const box = document.getElementById('statusBox');
-
-    if (isScanning) {
-        // 🐢 慢速掃描：速度降至 0.4x，增加板子跟隨寬容度
-        curGravity = BASE_GRAVITY * 0.16; // 物理公式：速度平方正比
-        curJump = BASE_JUMP * 0.4;
-        curSpeedX = BASE_SPEED_X * 0.4;
-        title.innerText = "🔍 模式：慢速物理掃描";
-        detail.innerText = "正在記錄精確落點座標...";
-        box.className = "status-box mode-scan";
-    } else {
-        // 🚀 正常速度：恢復 1.0x
-        curGravity = BASE_GRAVITY;
-        curJump = BASE_JUMP;
-        curSpeedX = BASE_SPEED_X;
-        title.innerText = "🎵 模式：完美全速演奏";
-        detail.innerText = "使用校準數據，物理鎖定中";
-        box.className = "status-box mode-play";
-    }
+function runFullProcess() {
+    if (!audioCtx) audioCtx = new AudioContext();
+    document.getElementById('status').innerText = "正在進行物理預算...";
     
-    // 重置球體位置
-    tracks.forEach(t => {
-        t.ball.x = t.steps[0].finalX;
-        t.ball.y = t.steps[0].y - 20;
-        t.ball.vx = curSpeedX;
-        t.ball.vy = curJump;
-        t.currentIdx = 0;
-    });
+    // 瞬間完成所有軌跡修正
+    preCalculatePaths();
+    
+    isRunning = true;
+    document.getElementById('startBtn').style.display = "none";
+    document.getElementById('status').innerText = "完美演奏中";
 }
 
 function update() {
     if (!isRunning || tracks.length === 0) return;
 
-    let allDone = true;
     tracks.forEach(t => {
         let b = t.ball;
-        b.vy += curGravity; b.x += b.vx; b.y += b.vy;
+        b.vy += GRAVITY; b.x += b.vx; b.y += b.vy;
 
         let target = t.steps[t.currentIdx];
         if (target) {
-            allDone = false;
-            // 💡 掃描模式：板子具備強大的「磁力」自動吸附球
-            if (isScanning) {
-                let idealX = b.x - target.w / 2;
-                target.finalX += (idealX - target.finalX) * 0.5; // 快速同步
-            }
-
-            // 碰撞判定 (正式模式下判斷 finalX)
-            let checkX = target.finalX;
-            if (b.x > checkX && b.x < checkX + target.w && 
+            // 因為座標已經過預算，這裡只需簡單判定
+            if (b.x > target.x && b.x < target.x + target.w && 
                 b.y + b.r > target.y && b.y < target.y + target.h + 20 && b.vy > 0) {
                 
                 b.y = target.y - b.r;
-                b.vy = curJump; 
+                b.vy = JUMP; 
                 target.active = 15;
                 
-                // 掃描模式下聲音變小，避免吵雜
-                const vol = isScanning ? 0.05 : 0.12;
                 const osc = audioCtx.createOscillator(), g = audioCtx.createGain();
                 osc.type = t.type;
                 osc.frequency.setValueAtTime(target.freq, audioCtx.currentTime);
-                g.gain.setValueAtTime(vol, audioCtx.currentTime);
+                g.gain.setValueAtTime(0.12, audioCtx.currentTime);
                 g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
                 osc.connect(g); g.connect(audioCtx.destination);
                 osc.start(); osc.stop(audioCtx.currentTime + 0.3);
                 
                 t.currentIdx++;
-                
-                // 更新進度條
-                const progress = (t.currentIdx / t.steps.length) * 100;
-                document.getElementById('progressFill').style.width = `${progress}%`;
             }
         }
     });
 
-    // 掃描完成切換模式
-    if (allDone && isScanning) {
-        setMode(false);
-    }
-
+    // 🎥 攝影機：球體永遠在畫面 Y 軸中心
     if (tracks[0]) {
         camX += (tracks[0].ball.x - canvas.width * 0.25 - camX) * 0.1;
         camY += (tracks[0].ball.y - canvas.height * 0.5 - camY) * 0.1;
@@ -193,15 +153,15 @@ function draw() {
 
     tracks.forEach(t => {
         const start = Math.max(0, t.currentIdx - 5);
-        const end = Math.min(t.steps.length, t.currentIdx + 20);
+        const end = Math.min(t.steps.length, t.currentIdx + 25);
         for(let i = start; i < end; i++) {
             let s = t.steps[i];
             ctx.fillStyle = s.active > 0 ? "#fff" : t.ball.color;
             if(s.active > 0) s.active--;
-            ctx.beginPath(); ctx.roundRect(s.finalX, s.y, s.w, s.h, 5); ctx.fill();
+            ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, s.h, 5); ctx.fill();
         }
         ctx.fillStyle = t.ball.color;
-        ctx.shadowBlur = isScanning ? 0 : 15; ctx.shadowColor = t.ball.color;
+        ctx.shadowBlur = 15; ctx.shadowColor = t.ball.color;
         ctx.beginPath(); ctx.arc(t.ball.x, t.ball.y, t.ball.r, 0, Math.PI*2); ctx.fill();
         ctx.shadowBlur = 0;
     });
