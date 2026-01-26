@@ -2,15 +2,16 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴機 5.1 - 背景預算版</title>
+    <title>AI 木琴機 5.2 - 完美重複版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         body { margin: 0; background: #020617; overflow: hidden; display: flex; flex-direction: column; height: 100vh; font-family: sans-serif; }
         .panel { background: rgba(15, 23, 42, 0.95); padding: 12px; display: flex; gap: 10px; justify-content: center; z-index: 100; border-bottom: 2px solid #3b82f6; }
         canvas { flex-grow: 1; }
-        button { border: none; padding: 10px 18px; border-radius: 6px; cursor: pointer; font-weight: bold; color: white; background: #3b82f6; transition: 0.3s; }
-        button:hover { background: #2563eb; transform: scale(1.05); }
-        #status { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); color: #60a5fa; background: rgba(0,0,0,0.7); padding: 8px 20px; border-radius: 30px; font-size: 14px; pointer-events: none; }
+        button { border: none; padding: 10px 18px; border-radius: 6px; cursor: pointer; font-weight: bold; color: white; background: #3b82f6; transition: 0.2s; }
+        button:active { transform: scale(0.95); }
+        .control-btns { display: none; gap: 10px; }
+        #status { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); color: #60a5fa; background: rgba(0,0,0,0.8); padding: 8px 20px; border-radius: 30px; font-size: 14px; border: 1px solid #1e40af; }
     </style>
 </head>
 <body>
@@ -18,10 +19,13 @@
 <div class="panel">
     <input type="file" id="midiUpload" accept=".mid,.midi" style="display:none">
     <button onclick="document.getElementById('midiUpload').click()">📁 1. 上傳 MIDI</button>
-    <button id="startBtn" onclick="runFullProcess()" style="background:#f43f5e; display:none;">🚀 2. 計算並演奏</button>
+    <div id="playControls" class="control-btns">
+        <button id="startBtn" onclick="runFullProcess()" style="background:#f43f5e;">🚀 開始演奏</button>
+        <button onclick="restartPerformance()" style="background:#64748b;">🔄 重新開始 (完美重現)</button>
+    </div>
 </div>
 
-<div id="status">請先上傳 MIDI 檔案</div>
+<div id="status">請上傳 MIDI 檔案以啟動系統</div>
 <canvas id="mainCanvas"></canvas>
 
 <script>
@@ -30,7 +34,7 @@ const ctx = canvas.getContext('2d');
 let audioCtx = null, tracks = [], isRunning = false;
 let camX = 0, camY = 0;
 
-// ⚙️ 固定物理參數 (全速模式)
+// ⚙️ 嚴格物理常量 - 全速模式 (不允許變動)
 const GRAVITY = 0.45;
 const JUMP = -9.8;
 const SPEED_X = 5.5; 
@@ -45,8 +49,8 @@ document.getElementById('midiUpload').addEventListener('change', async (e) => {
     if (!file) return;
     const midi = await Midi.fromUrl(URL.createObjectURL(file));
     setupInitialData(midi);
-    document.getElementById('startBtn').style.display = "inline-block";
-    document.getElementById('status').innerText = "數據解析完成，準備預算軌跡";
+    document.getElementById('playControls').style.display = "flex";
+    document.getElementById('status').innerText = "數據已就緒，請啟動預算";
 });
 
 function setupInitialData(midi) {
@@ -59,38 +63,43 @@ function setupInitialData(midi) {
         let steps = [];
         track.notes.forEach((note, nIdx) => {
             steps.push({
-                x: 400 + (note.time - startTime) * (SPEED_X * 60), 
+                x: 0, // 初始座標為 0，等待計算
+                baseX: 400 + (note.time - startTime) * (SPEED_X * 60), 
                 y: laneBaseY + (nIdx * 55), 
                 w: 120, h: 20, freq: midiToFreq(note.midi), active: 0
             });
         });
+        
+        // 記錄初始物理狀態以便重啟
+        const startX = steps[0].baseX;
+        const startY = steps[0].y - 20;
+
         tracks.push({
             steps,
-            ball: { x: steps[0].x, y: steps[0].y - 20, vx: SPEED_X, vy: JUMP, r: 12, color: `hsl(${tIdx*90}, 70%, 60%)` },
-            currentIdx: 0, type: tIdx % 2 === 0 ? 'triangle' : 'sine'
+            initialState: { x: startX, y: startY },
+            ball: { x: startX, y: startY, vx: SPEED_X, vy: JUMP, r: 12, color: `hsl(${tIdx*90}, 70%, 60%)` },
+            currentIdx: 0, 
+            type: tIdx % 2 === 0 ? 'triangle' : 'sine'
         });
     });
 }
 
-// 🧠 核心：背景瞬間模擬 (Pre-calculation)
 function preCalculatePaths() {
     tracks.forEach(t => {
-        // 複製一份虛擬球進行模擬
-        let vBall = { x: t.ball.x, y: t.ball.y, vx: t.ball.vx, vy: t.ball.vy };
-        
-        t.steps.forEach((s, idx) => {
-            // 模擬直到球落到目前音板的高度
+        let vBall = { x: t.initialState.x, y: t.initialState.y, vx: SPEED_X, vy: JUMP };
+        t.steps.forEach((s) => {
             let safety = 0;
+            // 模擬直到球落到目前音板高度且正在下墜
             while ((vBall.y + 12 < s.y || vBall.vy < 0) && safety < 1000) {
                 vBall.vy += GRAVITY;
                 vBall.x += vBall.vx;
                 vBall.y += vBall.vy;
                 safety++;
             }
-            // 強制修正音板 X 座標到虛擬球的落點中心
+            // 寫死座標：這就是物理預測的唯一正解
             s.x = vBall.x - s.w / 2;
             
-            // 模擬反彈
+            // 模擬反彈後的狀態提供給下一個音板預算
             vBall.y = s.y - 12;
             vBall.vy = JUMP;
         });
@@ -98,15 +107,26 @@ function preCalculatePaths() {
 }
 
 function runFullProcess() {
-    if (!audioCtx) audioCtx = new AudioContext();
-    document.getElementById('status').innerText = "正在進行物理預算...";
-    
-    // 瞬間完成所有軌跡修正
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     preCalculatePaths();
-    
     isRunning = true;
     document.getElementById('startBtn').style.display = "none";
-    document.getElementById('status').innerText = "完美演奏中";
+    document.getElementById('status').innerText = "正在進行完美演奏...";
+}
+
+function restartPerformance() {
+    isRunning = false;
+    // 徹底重置所有軌道的狀態，但不重新計算座標
+    tracks.forEach(t => {
+        t.ball.x = t.initialState.x;
+        t.ball.y = t.initialState.y;
+        t.ball.vx = SPEED_X;
+        t.ball.vy = JUMP;
+        t.currentIdx = 0;
+        t.steps.forEach(s => s.active = 0);
+    });
+    isRunning = true;
+    document.getElementById('status').innerText = "重新開始：再次完美重現";
 }
 
 function update() {
@@ -118,7 +138,7 @@ function update() {
 
         let target = t.steps[t.currentIdx];
         if (target) {
-            // 因為座標已經過預算，這裡只需簡單判定
+            // 使用預算好的 target.x 進行判定
             if (b.x > target.x && b.x < target.x + target.w && 
                 b.y + b.r > target.y && b.y < target.y + target.h + 20 && b.vy > 0) {
                 
@@ -139,7 +159,6 @@ function update() {
         }
     });
 
-    // 🎥 攝影機：球體永遠在畫面 Y 軸中心
     if (tracks[0]) {
         camX += (tracks[0].ball.x - canvas.width * 0.25 - camX) * 0.1;
         camY += (tracks[0].ball.y - canvas.height * 0.5 - camY) * 0.1;
