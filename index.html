@@ -2,14 +2,13 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴機 2.0 - 滾動階梯模組</title>
+    <title>AI 木琴機 2.0 - 空隙修正版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         body { margin: 0; background: #020617; color: #fff; font-family: sans-serif; overflow: hidden; }
-        .ui { position: fixed; top: 15px; left: 50%; transform: translateX(-50%); display: flex; gap: 15px; z-index: 100; background: rgba(15, 23, 42, 0.9); padding: 15px; border-radius: 50px; border: 1px solid #3b82f6; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
-        button { border: none; padding: 10px 25px; border-radius: 25px; cursor: pointer; font-weight: bold; color: white; background: #3b82f6; transition: 0.3s; }
-        button:hover { background: #2563eb; transform: scale(1.05); }
-        #status { position: fixed; bottom: 30px; width: 100%; text-align: center; color: #60a5fa; font-size: 14px; letter-spacing: 1px; }
+        .ui { position: fixed; top: 15px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; z-index: 100; background: rgba(15, 23, 42, 0.9); padding: 12px; border-radius: 30px; border: 1px solid #3b82f6; }
+        button { border: none; padding: 8px 20px; border-radius: 20px; cursor: pointer; font-weight: bold; color: white; background: #3b82f6; }
+        #status { position: fixed; bottom: 30px; width: 100%; text-align: center; color: #60a5fa; font-size: 14px; }
     </style>
 </head>
 <body>
@@ -17,10 +16,10 @@
 <div class="ui">
     <input type="file" id="midiFile" accept=".mid,.midi" style="display:none">
     <button onclick="document.getElementById('midiFile').click()">📁 選取 MIDI</button>
-    <button id="playBtn" onclick="startRolling()" style="background:#f43f5e; display:none;">🚀 啟動滾動演奏</button>
+    <button id="playBtn" onclick="startRolling()" style="background:#f43f5e; display:none;">🚀 啟動修正演奏</button>
 </div>
 
-<div id="status">等待音樂檔案載入...</div>
+<div id="status">準備修復過大的音階空隙...</div>
 <canvas id="stage"></canvas>
 
 <script>
@@ -36,27 +35,37 @@ const getFreq = (m) => 440 * Math.pow(2, (m - 69) / 12);
 document.getElementById('midiFile').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    document.getElementById('status').innerText = "正在打造專屬滾動階梯...";
     const midi = await Midi.fromUrl(URL.createObjectURL(file));
-    buildRollingPaths(midi);
+    buildGaplessPaths(midi);
     document.getElementById('playBtn').style.display = "inline-block";
-    document.getElementById('status').innerText = "準備就緒！請啟動。";
+    document.getElementById('status').innerText = "路徑已優化，空隙已補間。";
 });
 
-function buildRollingPaths(midi) {
+function buildGaplessPaths(midi) {
     tracks = [];
-    const colors = ["#fb7185", "#38bdf8", "#fbbf24", "#34d399"];
+    const colors = ["#fb7185", "#38bdf8"];
     
     midi.tracks.filter(t => t.notes.length > 0).slice(0, 2).forEach((track, tIdx) => {
         const laneY = 200 + (tIdx * 450);
         let steps = [];
         
         track.notes.forEach((note, nIdx) => {
-            // 音板長度取決於時值，快歌時板子變短
-            const w = Math.max(40, note.duration * 650); 
-            const x = 500 + note.time * 650;
-            // 基礎階梯下墜 + 音高補償
-            const y = laneY + (nIdx * 40) + (72 - note.midi) * 4;
+            const nextNote = track.notes[nIdx + 1];
+            let x = 500 + note.time * 650;
+            let y = laneY + (nIdx * 40) + (72 - note.midi) * 4;
+            let w = note.duration * 650;
+
+            // --- 空隙修正邏輯 ---
+            if (nextNote) {
+                const nextX = 500 + nextNote.time * 650;
+                const gap = nextX - (x + w);
+                
+                // 如果空隙大於 50 像素，自動延長音板
+                // 這能確保球在下一個音符開始前，不會因為空無一物而掉得太深
+                if (gap > 50) {
+                    w += gap * 0.8; 
+                }
+            }
 
             steps.push({ x, y, w, h: 14, freq: getFreq(note.midi), active: 0 });
         });
@@ -73,46 +82,52 @@ function buildRollingPaths(midi) {
 function startRolling() {
     if (!audioCtx) audioCtx = new AudioContext();
     isRunning = true;
-    document.querySelector('.ui').style.display = 'none';
 }
 
 function playNote(freq, type) {
     const o = audioCtx.createOscillator(), g = audioCtx.createGain();
     o.type = type; o.frequency.setValueAtTime(freq, audioCtx.currentTime);
     g.gain.setValueAtTime(0.1, audioCtx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.6);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
     o.connect(g); g.connect(audioCtx.destination);
-    o.start(); o.stop(audioCtx.currentTime + 0.6);
+    o.start(); o.stop(audioCtx.currentTime + 0.5);
 }
 
 function update() {
     if (!isRunning) return;
-
     let avgX = 0, avgY = 0;
+
     tracks.forEach(t => {
         let b = t.ball;
-        b.vy += 0.45; // 重力
+        b.vy += 0.45;
         b.x += b.vx;
         b.y += b.vy;
 
         let target = t.steps[t.currentIdx];
         if (target) {
-            // 滾動判定：在板子範圍內且正在下落
-            if (b.x > target.x && b.x < target.x + target.w && b.y + b.r > target.y && b.y < target.y + 20 && b.vy >= 0) {
+            // 修正：增加碰撞容錯率
+            if (b.x > target.x - 20 && b.x < target.x + target.w + 20 && 
+                b.y + b.r > target.y && b.y < target.y + 25 && b.vy >= 0) {
                 b.y = target.y - b.r;
-                b.vy = 0; // 消除垂直速度，實現「滾動」
-                if (target.active === 0) {
+                b.vy = 0;
+                if (target.active === 0 && b.x > target.x) {
                     playNote(target.freq, t.oscType);
                     target.active = 20;
                 }
             }
-            // 滾出板子邊界，切換到下一音
             if (b.x > target.x + target.w) t.currentIdx++;
         }
+        
+        // 掉落重生：如果空隙真的大到沒接到，讓球閃現到下一塊板子上方
+        if (target && b.y > target.y + 400) {
+            b.x = target.x - 20;
+            b.y = target.y - 150;
+            b.vy = 0;
+        }
+
         avgX += b.x; avgY += b.y;
     });
 
-    // 攝影機跟隨
     camX += (avgX/tracks.length - canvas.width/2 - camX) * 0.1;
     camY += (avgY/tracks.length - canvas.height/2 - camY) * 0.05;
 }
@@ -126,12 +141,12 @@ function draw() {
         t.steps.forEach(s => {
             ctx.fillStyle = s.active > 0 ? "#fff" : t.ball.color;
             if(s.active > 0) s.active--;
-            ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, s.h, 4); ctx.fill();
+            ctx.beginPath();
+            ctx.roundRect(s.x, s.y, s.w, s.h, 4);
+            ctx.fill();
         });
         ctx.fillStyle = t.ball.color;
-        ctx.shadowBlur = 15; ctx.shadowColor = t.ball.color;
         ctx.beginPath(); ctx.arc(t.ball.x, t.ball.y, t.ball.r, 0, Math.PI*2); ctx.fill();
-        ctx.shadowBlur = 0;
     });
 
     ctx.restore();
