@@ -2,29 +2,25 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴機 2.0 - 球心追蹤版</title>
+    <title>AI 木琴機 3.0 - 物理預言版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
-        body { margin: 0; background: #020617; color: #fff; font-family: sans-serif; overflow: hidden; display: flex; flex-direction: column; height: 100vh; }
-        .panel { background: rgba(15, 23, 42, 0.95); padding: 12px; display: flex; gap: 10px; justify-content: center; align-items: center; z-index: 100; border-bottom: 2px solid #3b82f6; }
-        canvas { flex-grow: 1; width: 100%; height: 100%; }
+        body { margin: 0; background: #020617; overflow: hidden; display: flex; flex-direction: column; height: 100vh; }
+        .panel { background: rgba(15, 23, 42, 0.95); padding: 12px; display: flex; gap: 10px; justify-content: center; z-index: 100; border-bottom: 2px solid #3b82f6; }
+        canvas { flex-grow: 1; }
         button { border: none; padding: 10px 18px; border-radius: 6px; cursor: pointer; font-weight: bold; color: white; background: #3b82f6; }
-        .status-badge { position: fixed; top: 70px; left: 20px; padding: 8px 15px; border-radius: 20px; font-size: 13px; font-weight: bold; }
-        .mode-train { background: #8b5cf6; border: 1px solid #c084fc; }
-        .mode-fixed { background: #10b981; border: 1px solid #4ade80; }
-        #debug { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); font-size: 12px; color: #64748b; }
+        #status { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); font-size: 14px; color: #60a5fa; }
     </style>
 </head>
 <body>
 
 <div class="panel">
     <input type="file" id="midiUpload" accept=".mid,.midi" style="display:none">
-    <button onclick="document.getElementById('midiUpload').click()">📁 1. 上傳 MIDI</button>
-    <button id="startBtn" onclick="startEngine()" style="background:#f43f5e; display:none;">🚀 2. 啟動演奏</button>
+    <button onclick="document.getElementById('midiUpload').click()">📁 上傳 MIDI 檔案</button>
+    <button id="startBtn" onclick="startEngine()" style="background:#f43f5e; display:none;">🚀 直接演奏</button>
 </div>
 
-<div id="modeTag" class="status-badge mode-train" style="display:none">初始化中...</div>
-<div id="debug">準備就緒，請上傳檔案</div>
+<div id="status">MIDI 數據將直接決定物理路徑，無需訓練</div>
 <canvas id="mainCanvas"></canvas>
 
 <script>
@@ -32,6 +28,11 @@ const canvas = document.getElementById('mainCanvas');
 const ctx = canvas.getContext('2d');
 let audioCtx = null, tracks = [], isRunning = false;
 let camX = 0, camY = 0;
+
+// 固定物理參數 (讓球的彈跳永遠一致)
+const GRAVITY = 0.38;
+const JUMP_STRENGTH = -8.5;
+const HORIZONTAL_SPEED = 5.2; // 固定水平速度
 
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
@@ -41,136 +42,101 @@ const midiToFreq = (m) => 440 * Math.pow(2, (m - 69) / 12);
 document.getElementById('midiUpload').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    try {
-        const midi = await Midi.fromUrl(URL.createObjectURL(file));
-        setupPhysics(midi);
-        document.getElementById('startBtn').style.display = "inline-block";
-        document.getElementById('modeTag').style.display = "block";
-        document.getElementById('modeTag').innerText = "等待啟動";
-    } catch (err) { console.error(err); }
+    const midi = await Midi.fromUrl(URL.createObjectURL(file));
+    setupPerfectPhysics(midi);
+    document.getElementById('startBtn').style.display = "inline-block";
 });
 
-function setupPhysics(midi) {
+function setupPerfectPhysics(midi) {
     tracks = [];
-    const colors = ["#f87171", "#60a5fa", "#fbbf24", "#34d399"];
-    // 優先選取音符最多的兩軌
-    const validTracks = midi.tracks.filter(t => t.notes.length > 0)
-                            .sort((a,b) => b.notes.length - a.notes.length)
-                            .slice(0, 2);
+    const colors = ["#f87171", "#60a5fa"];
+    const validTracks = midi.tracks.filter(t => t.notes.length > 0).slice(0, 2);
     
     validTracks.forEach((track, tIdx) => {
-        const laneBaseY = 100 + (tIdx * 400); 
+        const laneBaseY = 150 + (tIdx * 450);
         let steps = [];
+        
         track.notes.forEach((note, nIdx) => {
+            // 💡 數學核心：X 軸完全由時間決定，Y 軸隨之固定落點
+            // 我們假設球在時間點 t 必須準確擊中板子
             steps.push({
-                x: 400 + note.time * 650, 
-                y: laneBaseY + (nIdx * 48) + (70 - note.midi) * 6, 
-                w: 110, h: 18, freq: midiToFreq(note.midi), 
-                active: 0, 
-                isFixed: false // 每個音板獨立的鎖定狀態
+                x: 400 + note.time * (HORIZONTAL_SPEED * 60), // 時間與速度的嚴格映射
+                y: laneBaseY + (nIdx * 50), // 絕對下行階梯，不受音高影響 Y 軸，保證物理穩定
+                w: 100, h: 15, 
+                freq: midiToFreq(note.midi), 
+                active: 0,
+                originalNote: note.midi // 僅用於繪圖顏色參考
             });
         });
+
         const first = steps[0];
         tracks.push({
             steps,
-            ball: { x: first.x - 100, y: first.y - 300, vx: 4.8, vy: 2, r: 12, color: colors[tIdx] },
-            currentIdx: 0, 
-            type: tIdx % 2 === 0 ? 'triangle' : 'sine',
-            hitCount: 0
+            ball: { x: first.x, y: first.y - 100, vx: HORIZONTAL_SPEED, vy: 0, r: 10, color: colors[tIdx] },
+            currentIdx: 0,
+            type: tIdx === 0 ? 'triangle' : 'sine'
         });
     });
 }
 
 function startEngine() {
-    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (!audioCtx) audioCtx = new AudioContext();
     isRunning = true;
     document.getElementById('startBtn').style.display = "none";
-}
-
-function playSound(f, type) {
-    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-    o.type = type; o.frequency.setValueAtTime(f, audioCtx.currentTime);
-    g.gain.setValueAtTime(0.15, audioCtx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.4);
-    o.connect(g); g.connect(audioCtx.destination);
-    o.start(); o.stop(audioCtx.currentTime + 0.4);
 }
 
 function update() {
     if (!isRunning || tracks.length === 0) return;
 
-    let leadBall = tracks[0].ball; // 以第一顆球為攝像機核心
-
     tracks.forEach(t => {
         let b = t.ball;
-        b.vy += 0.38; b.x += b.vx; b.y += b.vy;
+        b.vy += GRAVITY;
+        b.x += b.vx;
+        b.y += b.vy;
 
         let target = t.steps[t.currentIdx];
         if (target) {
-            // 前 30 個音自動修正，之後鎖定
-            if (t.hitCount < 30 && b.y > target.y - 120 && b.vy > 0) {
-                target.x += (b.x - target.w/2 - target.x) * 0.35;
-            }
-
-            // 掉落重生
-            if (b.y > target.y + 600) {
-                b.x = target.x - 40; b.y = target.y - 200; b.vy = 0;
-            }
-
-            // 碰撞發聲
+            // 碰撞邏輯：當球與板子 X 軸重合且 Y 軸在下墜時
             if (b.x + b.r > target.x && b.x - b.r < target.x + target.w && 
-                b.y + b.r > target.y && b.y < target.y + target.h && b.vy > 0) {
-                b.y = target.y - b.r; b.vy = -8.5;
+                b.y + b.r > target.y && b.vy > 0) {
+                b.y = target.y - b.r;
+                b.vy = JUMP_STRENGTH; // 永遠給予相同的反彈力
                 target.active = 15;
-                playSound(target.freq, t.type);
-                t.currentIdx++;
-                t.hitCount++;
                 
-                // UI 狀態回饋
-                if (t.hitCount === 30) {
-                    target.isFixed = true;
-                }
+                const osc = audioCtx.createOscillator(), g = audioCtx.createGain();
+                osc.type = t.type;
+                osc.frequency.setValueAtTime(target.freq, audioCtx.currentTime);
+                g.gain.setValueAtTime(0.15, audioCtx.currentTime);
+                g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.4);
+                osc.connect(g); g.connect(audioCtx.destination);
+                osc.start(); osc.stop(audioCtx.currentTime + 0.4);
+                
+                t.currentIdx++;
             }
         }
     });
 
-    // 🎥 以球為中心的攝影機 (Camera follow ball)
-    // 我們平滑地將畫面中心對準球的位置
-    camX += (leadBall.x - canvas.width / 2 - camX) * 0.15;
-    camY += (leadBall.y - canvas.height / 2 - camY) * 0.15;
-
-    // 更新狀態標籤
-    const tag = document.getElementById('modeTag');
-    if (tracks[0].hitCount < 30) {
-        tag.innerText = `⚡ 訓練中: ${tracks[0].hitCount}/30`;
-        tag.className = "status-badge mode-train";
-    } else {
-        tag.innerText = "✅ 正式演奏模式 (座標已鎖定)";
-        tag.className = "status-badge mode-fixed";
-    }
+    // 🎥 攝影機：始終鎖定所有活動球的平均位置
+    const avgX = tracks.reduce((sum, t) => sum + t.ball.x, 0) / tracks.length;
+    const avgY = tracks.reduce((sum, t) => sum + t.ball.y, 0) / tracks.length;
+    camX += (avgX - canvas.width / 2 - camX) * 0.1;
+    camY += (avgY - canvas.height / 2 - camY) * 0.1;
 }
 
 function draw() {
     ctx.fillStyle = "#020617"; ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
     ctx.save();
-    // 整個畫面隨攝影機移動，球就會看起來像是在中心
     ctx.translate(-camX, -camY);
 
     tracks.forEach(t => {
-        t.steps.forEach((s, idx) => {
-            // 只顯示鄰近的音板以節省效能
-            if (Math.abs(s.x - camX) < canvas.width) {
-                ctx.fillStyle = s.active > 0 ? "#fff" : t.ball.color;
-                if(s.active > 0) s.active--;
-                ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, s.h, 6); ctx.fill();
-            }
+        t.steps.forEach(s => {
+            // 音板亮度隨音高微調
+            ctx.fillStyle = s.active > 0 ? "#fff" : t.ball.color;
+            if(s.active > 0) s.active--;
+            ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, s.h, 4); ctx.fill();
         });
-        // 畫球
         ctx.fillStyle = t.ball.color;
-        ctx.shadowBlur = 15; ctx.shadowColor = t.ball.color;
         ctx.beginPath(); ctx.arc(t.ball.x, t.ball.y, t.ball.r, 0, Math.PI*2); ctx.fill();
-        ctx.shadowBlur = 0;
     });
 
     ctx.restore();
