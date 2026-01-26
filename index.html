@@ -2,30 +2,25 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴機 5.3 - 視覺強化版</title>
+    <title>AI 木琴機 5.4 - 純化旋律版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
-        body { margin: 0; background: #020617; overflow: hidden; display: flex; flex-direction: column; height: 100vh; font-family: 'Segoe UI', sans-serif; }
-        .panel { background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(10px); padding: 15px; display: flex; gap: 15px; justify-content: center; z-index: 100; border-bottom: 1px solid rgba(59, 130, 246, 0.5); }
+        body { margin: 0; background: #020617; overflow: hidden; display: flex; flex-direction: column; height: 100vh; font-family: sans-serif; }
+        .panel { background: rgba(15, 23, 42, 0.9); padding: 15px; display: flex; gap: 10px; justify-content: center; z-index: 100; border-bottom: 1px solid #3b82f6; }
         canvas { flex-grow: 1; }
-        button { border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: bold; color: white; background: #3b82f6; transition: all 0.2s; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
-        button:hover { background: #2563eb; transform: translateY(-2px); }
-        button:active { transform: translateY(0); }
-        #status { position: fixed; top: 80px; right: 20px; color: #60a5fa; background: rgba(15, 23, 42, 0.8); padding: 10px 20px; border-radius: 12px; font-size: 13px; border-left: 4px solid #3b82f6; }
+        button { border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: bold; color: white; background: #3b82f6; }
+        #status { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); color: #60a5fa; background: rgba(0,0,0,0.8); padding: 8px 20px; border-radius: 30px; }
     </style>
 </head>
 <body>
 
 <div class="panel">
     <input type="file" id="midiUpload" accept=".mid,.midi" style="display:none">
-    <button onclick="document.getElementById('midiUpload').click()">📁 1. 選取 MIDI 檔案</button>
-    <div id="playControls" style="display: none; gap: 10px;">
-        <button id="startBtn" onclick="runFullProcess()" style="background:#f43f5e;">🚀 啟動完美演奏</button>
-        <button onclick="restartPerformance()" style="background:#475569;">🔄 重新開始</button>
-    </div>
+    <button onclick="document.getElementById('midiUpload').click()">📁 上傳並自動優化 MIDI</button>
+    <button id="startBtn" onclick="runFullProcess()" style="background:#f43f5e; display:none;">🚀 開始演奏</button>
 </div>
 
-<div id="status">系統就緒｜請上傳 MIDI</div>
+<div id="status">上傳 MIDI 後將自動過濾雜音</div>
 <canvas id="mainCanvas"></canvas>
 
 <script>
@@ -34,10 +29,7 @@ const ctx = canvas.getContext('2d');
 let audioCtx = null, tracks = [], isRunning = false;
 let camX = 0, camY = 0;
 
-// ⚙️ 物理參數
-const GRAVITY = 0.45;
-const JUMP = -10;
-const SPEED_X = 5.8; 
+const GRAVITY = 0.45, JUMP = -10, SPEED_X = 5.8; 
 
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
@@ -48,39 +40,53 @@ document.getElementById('midiUpload').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     const midi = await Midi.fromUrl(URL.createObjectURL(file));
-    setupInitialData(midi);
-    document.getElementById('playControls').style.display = "flex";
-    document.getElementById('status').innerText = "✅ 軌跡預算完成，可以開始演奏";
+    setupOptimizedData(midi);
+    document.getElementById('startBtn').style.display = "inline-block";
 });
 
-function setupInitialData(midi) {
+function setupOptimizedData(midi) {
     tracks = [];
     let startTime = Infinity;
-    midi.tracks.forEach(t => { if (t.notes.length > 0 && t.notes[0].time < startTime) startTime = t.notes[0].time; });
-
-    midi.tracks.filter(t => t.notes.length > 0).slice(0, 4).forEach((track, tIdx) => {
+    
+    // 1. 篩選軌道：排除打擊樂，並優先選擇音符數適中的軌道
+    const validTracks = midi.tracks.filter(t => !t.percusion && t.notes.length > 5);
+    
+    validTracks.slice(0, 2).forEach((track, tIdx) => {
         const laneBaseY = 300 + (tIdx * 500);
-        let steps = [];
-        track.notes.forEach((note, nIdx) => {
-            steps.push({
-                x: 0, 
-                baseX: 400 + (note.time - startTime) * (SPEED_X * 60), 
-                y: laneBaseY + (nIdx * 58), 
-                w: 110, h: 18, freq: midiToFreq(note.midi), active: 0
-            });
-        });
+        let rawNotes = track.notes;
         
-        const startX = steps[0].baseX;
-        const startY = steps[0].y - 30;
+        // 2. 和弦簡化：同一時間只保留最高音
+        let filteredNotes = [];
+        let lastTime = -1;
+        rawNotes.sort((a, b) => a.time - b.time).forEach(note => {
+            // 如果音符間隔小於 0.05 秒，視為和弦，只取最高音
+            if (Math.abs(note.time - lastTime) < 0.05) {
+                if (note.midi > filteredNotes[filteredNotes.length - 1].midi) {
+                    filteredNotes[filteredNotes.length - 1] = note;
+                }
+            } else {
+                filteredNotes.push(note);
+                lastTime = note.time;
+            }
+        });
+
+        if (filteredNotes.length > 0 && filteredNotes[0].time < startTime) startTime = filteredNotes[0].time;
+
+        let steps = filteredNotes.map((note, nIdx) => ({
+            x: 0, 
+            baseX: 400 + (note.time - startTime) * (SPEED_X * 60), 
+            y: laneBaseY + (nIdx * 58), 
+            w: 110, h: 18, freq: midiToFreq(note.midi), active: 0
+        }));
 
         tracks.push({
             steps,
-            initialState: { x: startX, y: startY },
-            ball: { x: startX, y: startY, vx: SPEED_X, vy: JUMP, r: 12, color: `hsl(${tIdx*80 + 200}, 80%, 60%)` },
-            currentIdx: 0, 
-            type: tIdx % 2 === 0 ? 'triangle' : 'sine'
+            initialState: { x: steps[0].baseX, y: steps[0].y - 30 },
+            ball: { x: steps[0].baseX, y: steps[0].y - 30, vx: SPEED_X, vy: JUMP, r: 12, color: `hsl(${tIdx*140 + 200}, 80%, 60%)` },
+            currentIdx: 0, type: tIdx === 0 ? 'triangle' : 'sine'
         });
     });
+    document.getElementById('status').innerText = `優化完成：已過濾和弦，保留 ${tracks.length} 條主旋律`;
 }
 
 function preCalculatePaths() {
@@ -105,93 +111,45 @@ function runFullProcess() {
     document.getElementById('startBtn').style.display = "none";
 }
 
-function restartPerformance() {
-    tracks.forEach(t => {
-        t.ball.x = t.initialState.x; t.ball.y = t.initialState.y;
-        t.ball.vx = SPEED_X; t.ball.vy = JUMP;
-        t.currentIdx = 0;
-        t.steps.forEach(s => s.active = 0);
-    });
-    isRunning = true;
-}
-
 function update() {
     if (!isRunning || tracks.length === 0) return;
-
     tracks.forEach(t => {
         let b = t.ball;
         b.vy += GRAVITY; b.x += b.vx; b.y += b.vy;
-
         let target = t.steps[t.currentIdx];
-        if (target) {
-            if (b.x > target.x && b.x < target.x + target.w && 
-                b.y + b.r > target.y && b.y < target.y + target.h + 20 && b.vy > 0) {
-                b.y = target.y - b.r; b.vy = JUMP; target.active = 15;
-                const osc = audioCtx.createOscillator(), g = audioCtx.createGain();
-                osc.type = t.type;
-                osc.frequency.setValueAtTime(target.freq, audioCtx.currentTime);
-                g.gain.setValueAtTime(0.12, audioCtx.currentTime);
-                g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
-                osc.connect(g); g.connect(audioCtx.destination);
-                osc.start(); osc.stop(audioCtx.currentTime + 0.3);
-                t.currentIdx++;
-            }
+        if (target && b.x > target.x && b.x < target.x + target.w && b.y + b.r > target.y && b.vy > 0) {
+            b.y = target.y - b.r; b.vy = JUMP; target.active = 15;
+            const osc = audioCtx.createOscillator(), g = audioCtx.createGain();
+            osc.type = t.type;
+            osc.frequency.setValueAtTime(target.freq, audioCtx.currentTime);
+            g.gain.setTargetAtTime(0.12, audioCtx.currentTime, 0.01);
+            g.gain.setTargetAtTime(0.001, audioCtx.currentTime + 0.1, 0.1);
+            osc.connect(g); g.connect(audioCtx.destination);
+            osc.start(); osc.stop(audioCtx.currentTime + 0.4);
+            t.currentIdx++;
         }
     });
-
-    // 🎥 關鍵：視覺滾動優化 (攝影機平滑跟隨)
     if (tracks[0]) {
-        // 讓球保持在螢幕寬度的 20% 位置，這樣可以看到前方更遠的路徑，增加前進感
-        let targetCamX = tracks[0].ball.x - canvas.width * 0.2;
-        let targetCamY = tracks[0].ball.y - canvas.height * 0.5;
-        camX += (targetCamX - camX) * 0.08; // 降低跟隨靈敏度，產生視覺上的速度感
-        camY += (targetCamY - camY) * 0.08;
-    }
-}
-
-function drawBackground() {
-    // 繪製動態網格，增加空間移動感
-    ctx.strokeStyle = "rgba(59, 130, 246, 0.05)";
-    ctx.lineWidth = 1;
-    const gridSize = 100;
-    const startX = Math.floor(camX / gridSize) * gridSize;
-    const startY = Math.floor(camY / gridSize) * gridSize;
-    
-    for (let x = startX; x < startX + canvas.width + gridSize; x += gridSize) {
-        ctx.beginPath(); ctx.moveTo(x - camX, 0); ctx.lineTo(x - camX, canvas.height); ctx.stroke();
-    }
-    for (let y = startY; y < startY + canvas.height + gridSize; y += gridSize) {
-        ctx.beginPath(); ctx.moveTo(0, y - camY); ctx.lineTo(canvas.width, y - camY); ctx.stroke();
+        camX += (tracks[0].ball.x - canvas.width * 0.2 - camX) * 0.08;
+        camY += (tracks[0].ball.y - canvas.height * 0.5 - camY) * 0.08;
     }
 }
 
 function draw() {
     ctx.fillStyle = "#020617"; ctx.fillRect(0, 0, canvas.width, canvas.height);
-    drawBackground();
-    
     ctx.save();
     ctx.translate(-camX, -camY);
-
     tracks.forEach(t => {
-        const start = Math.max(0, t.currentIdx - 5);
-        const end = Math.min(t.steps.length, t.currentIdx + 30);
-        
-        for(let i = start; i < end; i++) {
-            let s = t.steps[i];
-            // 繪製發光效果
-            ctx.shadowBlur = s.active > 0 ? 20 : 0;
-            ctx.shadowColor = t.ball.color;
-            ctx.fillStyle = s.active > 0 ? "#fff" : t.ball.color;
-            if(s.active > 0) s.active--;
-            ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, s.h, 5); ctx.fill();
-        }
-        
-        ctx.shadowBlur = 15;
+        t.steps.forEach((s, i) => {
+            if (Math.abs(i - t.currentIdx) < 20) {
+                ctx.fillStyle = s.active > 0 ? "#fff" : t.ball.color;
+                if(s.active > 0) s.active--;
+                ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, s.h, 5); ctx.fill();
+            }
+        });
         ctx.fillStyle = t.ball.color;
         ctx.beginPath(); ctx.arc(t.ball.x, t.ball.y, t.ball.r, 0, Math.PI*2); ctx.fill();
-        ctx.shadowBlur = 0;
     });
-
     ctx.restore();
     update();
     requestAnimationFrame(draw);
