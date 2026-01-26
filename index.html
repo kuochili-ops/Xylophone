@@ -2,33 +2,34 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴機 2.0 - 音軌切換版</title>
+    <title>AI 木琴機 2.0 - 智慧預設版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         body { margin: 0; background: #020617; color: #fff; font-family: sans-serif; overflow: hidden; }
-        .ui { position: fixed; top: 15px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 10px; z-index: 1000; background: rgba(15, 23, 42, 0.95); padding: 15px; border-radius: 20px; border: 1px solid #3b82f6; align-items: center; width: 95%; max-width: 800px; }
+        .ui { position: fixed; top: 15px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 10px; z-index: 1000; background: rgba(15, 23, 42, 0.95); padding: 15px; border-radius: 20px; border: 1px solid #3b82f6; align-items: center; width: 95%; max-width: 800px; box-shadow: 0 10px 40px rgba(0,0,0,0.8); }
         .controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; align-items: center; }
-        .track-selector { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 10px; max-height: 80px; overflow-y: auto; background: #0f172a; padding: 10px; border-radius: 10px; width: 100%; }
-        button, label { border: none; padding: 6px 12px; border-radius: 10px; cursor: pointer; font-weight: bold; color: white; background: #3b82f6; font-size: 12px; }
-        .track-btn { background: #475569; }
-        .track-btn.active { background: #f43f5e; box-shadow: 0 0 10px #f43f5e; }
-        #status { position: fixed; bottom: 20px; width: 100%; text-align: center; color: #60a5fa; font-size: 13px; }
+        .track-selector { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 10px; max-height: 100px; overflow-y: auto; background: #0f172a; padding: 10px; border-radius: 12px; width: 100%; border: 1px inset #1e293b; }
+        button, label { border: none; padding: 8px 16px; border-radius: 10px; cursor: pointer; font-weight: bold; color: white; background: #3b82f6; font-size: 12px; transition: 0.2s; }
+        button:hover { background: #2563eb; }
+        .track-btn { background: #334155; opacity: 0.7; }
+        .track-btn.active { background: #f43f5e; opacity: 1; box-shadow: 0 0 15px rgba(244, 63, 94, 0.5); }
+        #status { position: fixed; bottom: 20px; width: 100%; text-align: center; color: #60a5fa; font-size: 13px; font-weight: bold; }
     </style>
 </head>
 <body>
 
 <div class="ui">
     <div class="controls">
-        <label for="midiFile" style="background:#8b5cf6;">📁 輸入 MIDI</label>
+        <label for="midiFile" style="background:#8b5cf6;">📁 換一首歌 (MIDI)</label>
         <input type="file" id="midiFile" accept=".mid,.midi" style="display:none">
-        <input type="text" id="userMsg" placeholder="留言..." value="GREAT TRACK!">
+        <input type="text" id="userMsg" placeholder="結束留言..." value="MISSION COMPLETE!">
         <button id="playBtn" onclick="startRolling()" style="background:#f43f5e; display:none;">🚀 學習與修正</button>
-        <button id="recordBtn" onclick="startRecording()" style="background:#10b981; display:none;">📹 錄製 MP4</button>
+        <button id="recordBtn" onclick="startRecording()" style="background:#10b981; display:none;">📹 錄製完美影片</button>
     </div>
-    <div id="trackList" class="track-selector">請先載入檔案...</div>
+    <div id="trackList" class="track-selector">正在尋找預設瑪利歐檔案...</div>
 </div>
 
-<div id="status">抓不到旋律？載入後可以手動選擇音軌。</div>
+<div id="status">準備就緒</div>
 <canvas id="stage"></canvas>
 
 <script>
@@ -41,21 +42,38 @@ let recorder = null, chunks = [];
 const BALL_VX = 4.2; 
 const BALL_R = 10;
 const DIA = BALL_R * 2; 
+const EXTENSION = DIA * 3; // 音板右側突出長度
 
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
+// --- 1. 自動加載預設 MIDI ---
+window.addEventListener('DOMContentLoaded', async () => {
+    try {
+        const response = await fetch('Mario Bros. - Super Mario Bros. Theme.mid');
+        if (!response.ok) throw new Error();
+        const arrayBuffer = await response.arrayBuffer();
+        processMidi(arrayBuffer, "Mario Bros. Theme");
+    } catch (err) {
+        document.getElementById('trackList').innerText = "未發現預設檔案，請手動輸入 MIDI。";
+    }
+});
+
+// --- 2. 手動輸入 MIDI ---
 document.getElementById('midiFile').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     const arrayBuffer = await file.arrayBuffer();
-    fullMidi = new Midi(arrayBuffer);
+    processMidi(arrayBuffer, file.name);
+});
+
+function processMidi(buffer, name) {
+    fullMidi = new Midi(buffer);
     renderTrackButtons();
-    // 預設選擇音符最多的音軌
     const bestIdx = findBestTrack();
     selectTrack(bestIdx);
-    document.getElementById('status').innerText = `已讀取 ${fullMidi.tracks.length} 個音軌。請選擇或點擊開始。`;
-});
+    document.getElementById('status').innerText = `已載入: ${name}`;
+}
 
 function findBestTrack() {
     let max = -1, best = 0;
@@ -72,7 +90,7 @@ function renderTrackButtons() {
         if(t.notes.length === 0) return;
         const btn = document.createElement('button');
         btn.className = "track-btn";
-        btn.innerText = `音軌 ${i+1} (${t.name || '無名稱'}) - ${t.notes.length}音符`;
+        btn.innerText = `軌道 ${i+1}: ${t.name || 'Instrument'} (${t.notes.length} 音符)`;
         btn.onclick = () => selectTrack(i);
         btn.id = `track-${i}`;
         container.appendChild(btn);
@@ -82,40 +100,60 @@ function renderTrackButtons() {
 function selectTrack(idx) {
     document.querySelectorAll('.track-btn').forEach(b => b.classList.remove('active'));
     document.getElementById(`track-${idx}`)?.classList.add('active');
-    buildSinglePath(fullMidi.tracks[idx]);
+    buildPaths(fullMidi.tracks[idx]);
     document.getElementById('playBtn').style.display = "inline-block";
+    document.getElementById('recordBtn').style.display = "none";
 }
 
-function buildSinglePath(track) {
+function buildPaths(track) {
     tracks = [];
     let steps = [];
     const notes = track.notes;
+    
+    // 音階平滑化計算
     const midis = notes.map(n => n.midi);
     const minMidi = Math.min(...midis);
     const maxMidi = Math.max(...midis);
-    const verticalScale = (maxMidi - minMidi) > 24 ? 1.5 : 2.5;
+    const vScale = (maxMidi - minMidi) > 24 ? 1.5 : 2.5;
 
     let lastY = 300;
     notes.forEach((note, nIdx) => {
         let targetX = 500 + (note.time * 550);
-        let verticalDrop = 0;
+        let vDrop = 0;
         if (nIdx > 0) {
             const silence = note.time - (notes[nIdx-1].time + notes[nIdx-1].duration);
-            if (silence > 0.1) verticalDrop = Math.min(silence * 200, 150);
+            if (silence > 0.1) vDrop = Math.min(silence * 220, 160); // 休止符表現垂直下墜
         }
-        let targetY = lastY + 20 + (maxMidi - note.midi) * verticalScale + verticalDrop;
-        if (targetY <= lastY) targetY = lastY + 12;
-        steps.push({ x: targetX, y: targetY, w: Math.max(40, note.duration * 480), h: 12, freq: 440 * Math.pow(2,(note.midi-69)/12), active: 0, wasHit: false });
+        
+        let targetY = lastY + 20 + (maxMidi - note.midi) * vScale + vDrop;
+        if (targetY <= lastY) targetY = lastY + 12; // 強制下坡
+
+        steps.push({ 
+            x: targetX, y: targetY, 
+            w: Math.max(40, note.duration * 480), 
+            h: 12, freq: 440 * Math.pow(2,(note.midi-69)/12), 
+            active: 0, wasHit: false 
+        });
         lastY = targetY;
     });
 
-    // 實施重疊邏輯 (後板右側長於前板 3 個直徑)
+    // 物理約束：突出與間距
     for (let i = 0; i < steps.length - 1; i++) {
         let curr = steps[i], next = steps[i+1];
-        let currEnd = curr.x + curr.w;
-        if ((next.x + next.w) < (currEnd + (DIA * 3))) next.w = (currEnd + (DIA * 3)) - next.x;
-        let gap = next.x - currEnd;
-        if (gap > DIA) { let diff = gap - (DIA - 2); next.x -= diff; next.w += diff; }
+        let currRight = curr.x + curr.w;
+        
+        // 1. 後音板右側長於前音板至少 3 直徑
+        if ((next.x + next.w) < (currRight + EXTENSION)) {
+            next.w = (currRight + EXTENSION) - next.x;
+        }
+        
+        // 2. 連續距離不超過 1 直徑
+        let gap = next.x - currRight;
+        if (gap > DIA) {
+            let diff = gap - (DIA - 2);
+            next.x -= diff; 
+            next.w += diff;
+        }
     }
 
     tracks.push({
@@ -123,13 +161,17 @@ function buildSinglePath(track) {
         ball: { x: steps[0].x, y: steps[0].y - 80, vx: BALL_VX, vy: 0, r: BALL_R, color: "#fb7185" },
         currentIdx: 0, oscType: 'triangle'
     });
+    
+    // 相機初始定位
+    camX = steps[0].x - canvas.width/2;
+    camY = steps[0].y - canvas.height/2;
 }
 
-// 其餘物理 update/draw/錄製邏輯維持不變...
 function startRolling() {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     if (audioCtx.state === 'suspended') audioCtx.resume();
     isRunning = true;
+    document.getElementById('playBtn').style.display = 'none';
 }
 
 function startRecording() {
@@ -140,18 +182,20 @@ function startRecording() {
     recorder.onstop = () => {
         const blob = new Blob(chunks, { type: 'video/mp4' });
         const url = URL.createObjectURL(blob);
-        const a = document.createElement('a'); a.href = url; a.download = 'record.mp4'; a.click();
+        const a = document.createElement('a'); a.href = url; a.download = 'mario_run.mp4'; a.click();
     };
     recorder.start();
     perfectReplay();
+    document.getElementById('status').innerText = "🔴 錄製中...";
 }
 
 function perfectReplay() {
-    tracks.forEach(t => {
-        t.steps.forEach((s, i) => { if (!s.wasHit && i > 0) s.y = t.steps[i-1].y + 12; });
-        t.currentIdx = 0; t.ball.x = t.steps[0].x; t.ball.y = t.steps[0].y - 80; t.ball.vy = 0;
-        t.steps.forEach(s => { s.wasHit = false; s.active = 0; });
-    });
+    tracks[0].steps.forEach((s, i) => { if (!s.wasHit && i > 0) s.y = tracks[0].steps[i-1].y + 12; });
+    tracks[0].currentIdx = 0; 
+    tracks[0].ball.x = tracks[0].steps[0].x; 
+    tracks[0].ball.y = tracks[0].steps[0].y - 80;
+    tracks[0].ball.vy = 0;
+    tracks[0].steps.forEach(s => { s.wasHit = false; s.active = 0; });
     isRunning = true;
 }
 
@@ -160,26 +204,30 @@ function update() {
     const t = tracks[0];
     let b = t.ball; b.vy += 0.45; b.x += b.vx; b.y += b.vy;
     let target = t.steps[t.currentIdx];
+
     if (target) {
         if (b.x > target.x && b.x < target.x + target.w && b.y + b.r > target.y - 5 && b.vy >= 0) {
             b.y = target.y - b.r; b.vy = 0; target.wasHit = true;
-            if (target.active === 0) { playTone(target.freq, t.oscType); target.active = 20; }
+            if (target.active === 0) { playTone(target.freq); target.active = 20; }
         }
         if (b.x > target.x + target.w) t.currentIdx++;
     }
+
     camX += (b.x - canvas.width/2 - camX) * 0.15;
     camY += (b.y - canvas.height/2 - camY) * 0.1;
+
     if (t.currentIdx >= t.steps.length) {
         isRunning = false;
         if (recorder && recorder.state === "recording") recorder.stop();
         document.getElementById('recordBtn').style.display = "inline-block";
+        document.getElementById('status').innerText = "演奏完成！";
     }
 }
 
-function playTone(freq, type) {
+function playTone(freq) {
     const o = audioCtx.createOscillator();
     const g = audioCtx.createGain();
-    o.type = type; o.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    o.type = 'triangle'; o.frequency.setValueAtTime(freq, audioCtx.currentTime);
     g.gain.setTargetAtTime(0.1, audioCtx.currentTime, 0.02);
     g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
     o.connect(g); g.connect(audioCtx.destination);
@@ -195,9 +243,15 @@ function draw() {
         tracks[0].steps.forEach(s => {
             ctx.fillStyle = s.active > 0 ? "#fff" : "#fb718566";
             ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, s.h, 4); ctx.fill();
+            if (s.active > 0) s.active--;
         });
         ctx.fillStyle = "#fb7185";
         ctx.beginPath(); ctx.arc(tracks[0].ball.x, tracks[0].ball.y, BALL_R, 0, Math.PI*2); ctx.fill();
+    }
+    const lastStep = tracks[0]?.steps[tracks[0].steps.length - 1];
+    if (lastStep && !isRunning && tracks[0].currentIdx >= tracks[0].steps.length) {
+        ctx.fillStyle = "#fff"; ctx.font = "bold 80px sans-serif"; ctx.textAlign = "center";
+        ctx.fillText(document.getElementById('userMsg').value, lastStep.x + 200, lastStep.y - 50);
     }
     ctx.restore();
     if (isRunning) update();
