@@ -2,15 +2,16 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴機 2.0 - 位能階梯鎖定版</title>
+    <title>AI 木琴機 2.0 - 物理啟動修復</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         body { margin: 0; background: #020617; color: #fff; font-family: sans-serif; overflow: hidden; display: flex; flex-direction: column; height: 100vh; }
         .panel { background: rgba(15, 23, 42, 0.95); padding: 12px; display: flex; gap: 10px; justify-content: center; align-items: center; z-index: 100; border-bottom: 2px solid #3b82f6; }
         canvas { flex-grow: 1; width: 100%; height: 100%; }
         button { border: none; padding: 10px 18px; border-radius: 6px; cursor: pointer; font-weight: bold; color: white; background: #3b82f6; }
-        .mode-active { background: #10b981 !important; border: 2px solid #fff; }
-        #status { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); font-size: 14px; color: #60a5fa; background: rgba(0,0,0,0.7); padding: 6px 16px; border-radius: 20px; }
+        .btn-start { background: #f43f5e !important; animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
+        #status { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); font-size: 14px; color: #60a5fa; background: rgba(0,0,0,0.8); padding: 8px 20px; border-radius: 20px; border: 1px solid #1e293b; }
     </style>
 </head>
 <body>
@@ -18,11 +19,11 @@
 <div class="panel">
     <input type="file" id="midiUpload" accept=".mid,.midi" style="display:none">
     <button onclick="document.getElementById('midiUpload').click()">📁 1. 上傳 MIDI</button>
-    <button id="lockBtn" onclick="toggleLock()" style="background:#8b5cf6">🔓 2. 訓練模式 (板子會動)</button>
-    <button id="startBtn" onclick="startEngine()" style="background:#f43f5e; display:none;">🚀 3. 啟動演奏</button>
+    <button id="startBtn" class="btn-start" onclick="startEngine()" style="display:none;">🚀 2. 點擊啟動 (解鎖物理與聲音)</button>
+    <button onclick="toggleLock()" id="lockBtn" style="background:#8b5cf6">🔓 訓練模式</button>
 </div>
 
-<div id="status">等待上傳 MIDI 檔案...</div>
+<div id="status">請先上傳 MIDI 檔案以生成路徑</div>
 <canvas id="mainCanvas"></canvas>
 
 <script>
@@ -37,22 +38,21 @@ const midiToFreq = (m) => 440 * Math.pow(2, (m - 69) / 12);
 
 function toggleLock() {
     isLocked = !isLocked;
-    const btn = document.getElementById('lockBtn');
-    btn.innerText = isLocked ? "🔒 正式模式 (座標鎖定)" : "🔓 訓練模式 (板子會動)";
-    btn.classList.toggle('mode-active', isLocked);
+    document.getElementById('lockBtn').innerText = isLocked ? "🔒 座標已鎖定" : "🔓 訓練模式 (板子會動)";
+    document.getElementById('lockBtn').style.background = isLocked ? "#10b981" : "#8b5cf6";
 }
 
 document.getElementById('midiUpload').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    document.getElementById('status').innerText = "解析中...";
+    document.getElementById('status').innerText = "解析音樂中...";
     try {
         const midi = await Midi.fromUrl(URL.createObjectURL(file));
         setupPhysics(midi);
         document.getElementById('startBtn').style.display = "inline-block";
-        document.getElementById('status').innerText = "解析成功！請點擊啟動並讓球跑一次訓練。";
+        document.getElementById('status').innerText = "解析成功！點擊上方紅色按鈕啟動。";
     } catch (err) {
-        document.getElementById('status').innerText = "解析失敗";
+        document.getElementById('status').innerText = "解析失敗，請確認檔案格式。";
     }
 });
 
@@ -60,29 +60,28 @@ function setupPhysics(midi) {
     tracks = [];
     const colors = ["#f87171", "#60a5fa", "#fbbf24", "#34d399"];
     
-    midi.tracks.forEach((track, tIdx) => {
-        if (track.notes.length === 0 || tIdx > 3) return;
+    // 取前 4 軌
+    midi.tracks.slice(0, 4).forEach((track, tIdx) => {
+        if (track.notes.length === 0) return;
         
-        const laneBaseY = 200 + (tIdx * 350); 
+        const laneBaseY = 150 + (tIdx * 300);
         let steps = [];
         
         track.notes.forEach((note, nIdx) => {
             steps.push({
-                // X 軸：根據時間線性前進
                 x: 400 + note.time * 650, 
-                // Y 軸：位能階梯 (nIdx * 45 表示逐板降低) + 音高偏移
-                y: laneBaseY + (nIdx * 45) + (70 - note.midi) * 5, 
-                w: 110, h: 18,
+                // 逐板降低 (nIdx * 40) 確保位能，加上音高偏移 (70-note.midi)
+                y: laneBaseY + (nIdx * 45) + (70 - note.midi) * 6, 
+                w: 110, h: 16,
                 freq: midiToFreq(note.midi),
                 active: 0
             });
         });
 
-        // 確保球從第一塊板子上方落下
         const first = steps[0];
         tracks.push({
             steps,
-            ball: { x: first.x - 60, y: first.y - 200, vx: 0, vy: 0, r: 12, color: colors[tIdx] },
+            ball: { x: first.x - 80, y: first.y - 250, vx: 0, vy: 0, r: 12, color: colors[tIdx] },
             currentIdx: 0,
             type: tIdx % 2 === 0 ? 'triangle' : 'sine'
         });
@@ -90,12 +89,17 @@ function setupPhysics(midi) {
 }
 
 function startEngine() {
-    if (!audioCtx) audioCtx = new AudioContext();
+    // 解決「球不掉下」：必須在點擊事件中啟動 Audio 與賦予初速
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    
     isRunning = true;
     tracks.forEach(t => {
-        t.ball.vx = 4.8; // 給予初始向右速度
-        t.ball.vy = 0;
+        t.ball.vx = 4.8; // 給予水平初速
+        t.ball.vy = 2;   // 給予垂直向下初速，確保第一跳必中
     });
+    document.getElementById('startBtn').style.display = "none";
+    document.getElementById('status').innerText = "正在演奏：觀察球路並在合適時鎖定座標。";
 }
 
 function playSound(f, type) {
@@ -115,19 +119,20 @@ function update() {
 
         let target = t.steps[t.currentIdx];
         if (target) {
-            // 訓練修正邏輯：只有在未鎖定時板子才會移動
+            // 訓練模式：板子自動微調位置接球
             if (!isLocked && b.y > target.y - 120 && b.vy > 0) {
-                target.x += (b.x - target.w/2 - target.x) * 0.3;
+                target.x += (b.x - target.w/2 - target.x) * 0.35;
             }
 
-            // 掉落自動歸位 (安全網)
-            if (b.y > target.y + 500) {
-                b.x = target.x - 30; b.y = target.y - 150; b.vy = 0;
+            // 掉落自動重生 (安全網)
+            if (b.y > target.y + 600) {
+                b.x = target.x - 40; b.y = target.y - 180; b.vy = 0;
             }
 
+            // 碰撞發聲
             if (b.x + b.r > target.x && b.x - b.r < target.x + target.w && 
                 b.y + b.r > target.y && b.y < target.y + target.h && b.vy > 0) {
-                b.y = target.y - b.r; b.vy = -8.2;
+                b.y = target.y - b.r; b.vy = -8.5;
                 target.active = 15;
                 playSound(target.freq, t.type);
                 t.currentIdx++;
@@ -144,10 +149,10 @@ function draw() {
         t.steps.forEach(s => {
             ctx.fillStyle = s.active > 0 ? "#fff" : t.ball.color;
             if(s.active > 0) s.active--;
-            ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, s.h, 6); ctx.fill();
+            ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, s.h, 5); ctx.fill();
         });
         ctx.fillStyle = t.ball.color;
-        ctx.beginPath(); ctx.arc(b = t.ball.x, t.ball.y, t.ball.r, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(t.ball.x, t.ball.y, t.ball.r, 0, Math.PI*2); ctx.fill();
     });
     ctx.restore();
     update();
