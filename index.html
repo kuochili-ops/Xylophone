@@ -2,12 +2,12 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴機 2.0 - 垂直路徑強化版</title>
+    <title>AI 木琴機 2.0 - 音域平滑優化</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         body { margin: 0; background: #020617; color: #fff; font-family: sans-serif; overflow: hidden; }
         .ui { position: fixed; top: 15px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 10px; z-index: 1000; background: rgba(15, 23, 42, 0.95); padding: 15px; border-radius: 20px; border: 1px solid #3b82f6; align-items: center; width: 90%; max-width: 750px; }
-        .controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; align-items: center; }
+        .controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
         button, label { border: none; padding: 8px 18px; border-radius: 12px; cursor: pointer; font-weight: bold; color: white; background: #3b82f6; font-size: 12px; }
         input[type="text"] { padding: 8px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: white; width: 160px; }
         #status { position: fixed; bottom: 20px; width: 100%; text-align: center; color: #60a5fa; font-size: 13px; }
@@ -21,13 +21,13 @@
         <input type="file" id="midiFile" accept=".mid,.midi" style="display:none">
         <label for="bgFile" style="background:#64748b;">🖼️ 背景圖</label>
         <input type="file" id="bgFile" accept="image/*" style="display:none">
-        <input type="text" id="userMsg" placeholder="結束留言..." value="VERTICAL MASTER!">
+        <input type="text" id="userMsg" placeholder="留言..." value="SMOOTH PERFORMANCE!">
         <button id="playBtn" onclick="startRolling()" style="background:#f43f5e; display:none;">🚀 學習與修正</button>
         <button id="recordBtn" onclick="startRecording()" style="background:#10b981; display:none;">📹 錄製完美 MP4</button>
     </div>
 </div>
 
-<div id="status">等待輸入 MIDI 以計算長突出路徑...</div>
+<div id="status">等待輸入 MIDI 檔...</div>
 <canvas id="stage"></canvas>
 
 <script>
@@ -40,7 +40,7 @@ let recorder = null, chunks = [];
 const BALL_VX = 4.2; 
 const BALL_R = 10;
 const DIA = BALL_R * 2; 
-const EXTENSION = DIA * 3; // 突出 3 個直徑 = 60px
+const EXTENSION = DIA * 3; 
 
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
@@ -50,12 +50,12 @@ document.getElementById('midiFile').addEventListener('change', async (e) => {
     if (!file) return;
     const arrayBuffer = await file.arrayBuffer();
     const midi = new Midi(arrayBuffer);
-    buildVerticalPaths(midi);
+    buildSmoothPaths(midi);
     document.getElementById('playBtn').style.display = "inline-block";
-    document.getElementById('status').innerText = "路徑已生成：休止符垂直化 + 長突出模式。";
+    document.getElementById('status').innerText = "已實施音階平滑化：解決落差過大問題。";
 });
 
-function buildVerticalPaths(midi) {
+function buildSmoothPaths(midi) {
     tracks = [];
     const validTracks = midi.tracks.filter(t => t.notes.length > 0)
                                    .sort((a,b) => b.notes.length - a.notes.length)
@@ -63,71 +63,65 @@ function buildVerticalPaths(midi) {
     
     validTracks.forEach((track, tIdx) => {
         let steps = [];
-        let lastY = 200 + (tIdx * 250);
-        let lastXEnd = 500;
-        const color = tIdx === 0 ? "#fb7185" : "#38bdf8";
+        const notes = track.notes;
+        
+        // 1. 找出音域範圍
+        const midis = notes.map(n => n.midi);
+        const minMidi = Math.min(...midis);
+        const maxMidi = Math.max(...midis);
+        const range = maxMidi - minMidi || 1;
+        
+        // 2. 映射縮放比例 (音階落差太大時縮小係數)
+        const verticalScale = range > 24 ? 1.5 : 2.5; 
 
-        track.notes.forEach((note, nIdx) => {
-            // 計算 X：基礎位置
+        let lastY = 300 + (tIdx * 250);
+
+        notes.forEach((note, nIdx) => {
             let targetX = 500 + (note.time * 550);
             
-            // 處理「休止符」：若當前音符與上一個音符有時間間隙
+            // 表現休止符的下墜 (限制最大下墜值)
             let verticalDrop = 0;
             if (nIdx > 0) {
-                const prevNote = track.notes[nIdx-1];
-                const silence = note.time - (prevNote.time + prevNote.duration);
-                if (silence > 0.1) {
-                    verticalDrop = silence * 300; // 休止符越長，掉落越深
-                }
+                const silence = note.time - (notes[nIdx-1].time + notes[nIdx-1].duration);
+                if (silence > 0.1) verticalDrop = Math.min(silence * 200, 150); 
             }
 
-            let targetY = lastY + 25 + (72 - note.midi) * 2.5 + verticalDrop;
-            if (targetY <= lastY) targetY = lastY + 15;
+            // 平滑映射音高：將 midi 差異轉為 Y 偏移
+            let targetY = lastY + 20 + (maxMidi - note.midi) * verticalScale + verticalDrop;
+            
+            // 確保每一塊板子都比前一塊低，維持滾動勢能
+            if (targetY <= lastY) targetY = lastY + 12;
 
-            // 音板長度 (維持音符長度)
             let w = Math.max(40, note.duration * 480);
-
-            steps.push({ 
-                x: targetX, y: targetY, w: w, h: 12, 
-                freq: 440 * Math.pow(2,(note.midi-69)/12), 
-                active: 0, wasHit: false 
-            });
+            steps.push({ x: targetX, y: targetY, w, h: 12, freq: 440 * Math.pow(2,(note.midi-69)/12), active: 0, wasHit: false });
             lastY = targetY;
         });
 
-        // 第二步：實施嚴格重疊與「長突出」約束
+        // 3. 實施嚴格重疊與長突出約束
         for (let i = 0; i < steps.length - 1; i++) {
-            let current = steps[i];
-            let next = steps[i+1];
-
-            // 1. 後音板右側必須長於前音板至少 3 個直徑
+            let current = steps[i], next = steps[i+1];
             let currentRight = current.x + current.w;
-            let targetNextRight = currentRight + EXTENSION;
             
-            // 如果後板不夠長，延伸它
-            if ((next.x + next.w) < targetNextRight) {
-                next.w = targetNextRight - next.x;
+            // 後板突出至少 3 直徑
+            if ((next.x + next.w) < (currentRight + EXTENSION)) {
+                next.w = (currentRight + EXTENSION) - next.x;
             }
-
-            // 2. 前後板 X 軸間隙不得超過一個直徑 (20px)
+            // 間隙不超過 1 直徑
             let gap = next.x - currentRight;
             if (gap > DIA) {
-                // 為了填補間隙又不影響節奏觸發點，我們「往前延伸」後音板的起點
-                let diff = gap - (DIA - 2); 
-                next.x -= diff;
-                next.w += diff; // 保持末端位置不變
+                let diff = gap - (DIA - 2);
+                next.x -= diff; next.w += diff;
             }
         }
 
         tracks.push({
             steps,
-            ball: { x: steps[0].x, y: steps[0].y - 80, vx: BALL_VX, vy: 0, r: BALL_R, color: color },
-            currentIdx: 0, oscType: tIdx === 0 ? 'triangle' : 'sine'
+            ball: { x: steps[0].x, y: steps[0].y - 80, vx: BALL_VX, vy: 0, r: BALL_R, color: tIdx===0?"#fb7185":"#38bdf8" },
+            currentIdx: 0, oscType: tIdx===0?'triangle':'sine'
         });
     });
 }
 
-// 錄影與重播邏輯維持穩定版本
 function startRolling() {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     isRunning = true;
@@ -142,7 +136,7 @@ function startRecording() {
     recorder.onstop = () => {
         const blob = new Blob(chunks, { type: 'video/mp4' });
         const url = URL.createObjectURL(blob);
-        const a = document.createElement('a'); a.href = url; a.download = 'performance.mp4'; a.click();
+        const a = document.createElement('a'); a.href = url; a.download = 'smooth_performance.mp4'; a.click();
     };
     recorder.start();
     perfectReplay();
@@ -173,11 +167,9 @@ function update() {
             if (b.x > target.x + target.w) t.currentIdx++;
         }
     });
-
     const redBall = tracks[0].ball;
     camX += (redBall.x - canvas.width/2 - camX) * 0.15;
     camY += (redBall.y - canvas.height/2 - camY) * 0.1;
-    
     if (tracks[0].currentIdx >= tracks[0].steps.length) {
         isRunning = false;
         if (recorder && recorder.state === "recording") recorder.stop();
