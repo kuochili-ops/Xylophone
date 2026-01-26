@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴機 3.2 - 強制鎖定版</title>
+    <title>AI 木琴機 3.3 - 平滑追蹤版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         body { margin: 0; background: #020617; overflow: hidden; display: flex; flex-direction: column; height: 100vh; }
@@ -16,7 +16,7 @@
 <div class="panel">
     <input type="file" id="midiUpload" accept=".mid,.midi" style="display:none">
     <button onclick="document.getElementById('midiUpload').click()">📁 1. 上傳 MIDI</button>
-    <button id="startBtn" onclick="startEngine()" style="background:#f43f5e; display:none;">🚀 2. 啟動演奏</button>
+    <button id="startBtn" onclick="startEngine()" style="background:#f43f5e; display:none;">🚀 2. 啟動平滑演奏</button>
 </div>
 <canvas id="mainCanvas"></canvas>
 
@@ -26,10 +26,10 @@ const ctx = canvas.getContext('2d');
 let audioCtx = null, tracks = [], isRunning = false;
 let camX = 0, camY = 0;
 
-// ⚙️ 絕對物理參數 (與 MIDI 時間嚴格掛鉤)
+// ⚙️ 核心物理參數 (經過拋物線精算)
 const GRAVITY = 0.45;
-const JUMP = -9.5;
-const SPEED_X = 5.5; 
+const JUMP = -9.8;
+const SPEED_X = 5.2; 
 
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
@@ -40,45 +40,41 @@ document.getElementById('midiUpload').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     const midi = await Midi.fromUrl(URL.createObjectURL(file));
-    setupPerfectPhysics(midi);
+    setupPhysics(midi);
     document.getElementById('startBtn').style.display = "inline-block";
 });
 
-function setupPerfectPhysics(midi) {
+function setupPhysics(midi) {
     tracks = [];
     const colors = ["#f87171", "#60a5fa", "#fbbf24", "#34d399"];
     
-    // 找出起始時間
     let startTime = Infinity;
     midi.tracks.forEach(t => { if (t.notes.length > 0 && t.notes[0].time < startTime) startTime = t.notes[0].time; });
 
     midi.tracks.filter(t => t.notes.length > 0).slice(0, 4).forEach((track, tIdx) => {
         const laneBaseY = 300 + (tIdx * 500);
         let steps = [];
+        
         track.notes.forEach((note, nIdx) => {
             steps.push({
                 x: 400 + (note.time - startTime) * (SPEED_X * 60), 
                 y: laneBaseY + (nIdx * 55), 
-                w: 130, h: 20, freq: midiToFreq(note.midi), active: 0
+                w: 120, h: 20, freq: midiToFreq(note.midi), active: 0
             });
         });
 
-        // 💡 解決落下問題：直接讓球初始化在第一塊板子的上方 1 像素處，並給予向上的跳躍力
         const first = steps[0];
         tracks.push({
             steps,
             ball: { 
-                x: first.x + 10, 
-                y: first.y - 25, // 緊貼板子
-                vx: SPEED_X, vy: JUMP, // 初始直接就是「跳躍」狀態
-                r: 12, color: colors[tIdx] 
+                x: first.x, 
+                y: first.y - 10, // 貼著第一塊板子
+                vx: SPEED_X, vy: JUMP, // 直接起跳
+                r: 12, color: colors[tIdx % 4] 
             },
             currentIdx: 0,
             type: tIdx % 2 === 0 ? 'triangle' : 'sine'
         });
-        
-        // 將第一塊板子設為已擊中，或讓球直接從它開始
-        // 這裡我們讓球從第一塊板子「起跳」
     });
 }
 
@@ -97,9 +93,9 @@ function update() {
 
         let target = t.steps[t.currentIdx];
         if (target) {
-            // 強化判定：只要球的中心穿過板子的 Y 軸面，且在 X 範圍內就觸發
-            if (b.x > target.x && b.x < target.x + target.w && 
-                b.y + b.r > target.y && b.y < target.y + target.h + 10 && b.vy > 0) {
+            // 判定範圍加寬，確保高速下不穿透
+            if (b.x > target.x - 20 && b.x < target.x + target.w + 20 && 
+                b.y + b.r > target.y && b.y < target.y + target.h + 20 && b.vy > 0) {
                 
                 b.y = target.y - b.r;
                 b.vy = JUMP; 
@@ -108,27 +104,32 @@ function update() {
                 const osc = audioCtx.createOscillator(), g = audioCtx.createGain();
                 osc.type = t.type;
                 osc.frequency.setValueAtTime(target.freq, audioCtx.currentTime);
-                g.gain.setValueAtTime(0.15, audioCtx.currentTime);
+                g.gain.setValueAtTime(0.12, audioCtx.currentTime);
                 g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
                 osc.connect(g); g.connect(audioCtx.destination);
                 osc.start(); osc.stop(audioCtx.currentTime + 0.3);
                 
-                t.currentIdx++;
+                t.currentIdx++; // 成功敲擊，目標移向下一音
             }
         }
         
-        // 🚨 修正重生點：如果球掉下去了，重生在「目前」目標的上方，而不是起點
-        if (target && b.y > target.y + 500) {
-            b.x = target.x + 10;
-            b.y = target.y - 100;
-            b.vy = 0;
+        // 🚨 關鍵：如果球「掉太深」，直接傳送到下一個音符上方，而不是回起點
+        if (target && b.y > target.y + 300) {
+            b.x = target.x; 
+            b.y = target.y - 100; 
+            b.vy = 0; 
         }
     });
 
-    // 🎥 攝影機：強制跟隨球群中心
-    const lead = tracks[0].ball;
-    camX += (lead.x - canvas.width * 0.2 - camX) * 0.15;
-    camY += (lead.y - canvas.height * 0.5 - camY) * 0.15;
+    // 🎥 畫面連續性的秘訣：攝影機強制平滑化，不允許瞬間跳躍
+    if (tracks[0]) {
+        let targetCamX = tracks[0].ball.x - canvas.width * 0.25;
+        let targetCamY = tracks[0].ball.y - canvas.height * 0.5;
+        
+        // 減緩追隨速度，增加視覺穩定感
+        camX += (targetCamX - camX) * 0.1;
+        camY += (targetCamY - camY) * 0.1;
+    }
 }
 
 function draw() {
@@ -137,13 +138,17 @@ function draw() {
     ctx.translate(-camX, -camY);
 
     tracks.forEach(t => {
-        t.steps.forEach(s => {
-            if (s.x > camX - 200 && s.x < camX + canvas.width + 200) {
-                ctx.fillStyle = s.active > 0 ? "#fff" : t.ball.color;
-                if(s.active > 0) s.active--;
-                ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, s.h, 4); ctx.fill();
-            }
-        });
+        // 只繪製當前附近的音板，增加效能
+        const start = Math.max(0, t.currentIdx - 5);
+        const end = Math.min(t.steps.length, t.currentIdx + 15);
+        
+        for(let i = start; i < end; i++) {
+            let s = t.steps[i];
+            ctx.fillStyle = s.active > 0 ? "#fff" : t.ball.color;
+            if(s.active > 0) s.active--;
+            ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, s.h, 5); ctx.fill();
+        }
+        
         ctx.fillStyle = t.ball.color;
         ctx.beginPath(); ctx.arc(t.ball.x, t.ball.y, t.ball.r, 0, Math.PI*2); ctx.fill();
     });
