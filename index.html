@@ -2,17 +2,15 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴機 2.0 - 速度動態控制</title>
+    <title>AI 木琴機 2.0 - 物理修正版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         body { margin: 0; background: #020617; color: #fff; font-family: sans-serif; overflow: hidden; }
         .ui { position: fixed; top: 15px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 10px; z-index: 100; background: rgba(15, 23, 42, 0.9); padding: 15px 25px; border-radius: 20px; border: 1px solid #3b82f6; align-items: center; }
         .controls { display: flex; gap: 15px; align-items: center; }
-        .slider-box { display: flex; flex-direction: column; align-items: center; gap: 5px; }
-        input[type=range] { width: 200px; cursor: pointer; }
-        button { border: none; padding: 8px 20px; border-radius: 20px; cursor: pointer; font-weight: bold; color: white; background: #3b82f6; transition: 0.3s; }
+        button { border: none; padding: 8px 20px; border-radius: 20px; cursor: pointer; font-weight: bold; color: white; background: #3b82f6; }
         #status { position: fixed; bottom: 20px; width: 100%; text-align: center; color: #60a5fa; font-size: 13px; }
-        label { font-size: 12px; color: #94a3b8; }
+        input[type=range] { width: 150px; }
     </style>
 </head>
 <body>
@@ -20,36 +18,32 @@
 <div class="ui">
     <div class="controls">
         <input type="file" id="midiFile" accept=".mid,.midi" style="display:none">
-        <button onclick="document.getElementById('midiFile').click()">📁 載入音樂</button>
-        <button id="playBtn" onclick="startRolling()" style="background:#f43f5e; display:none;">🚀 啟動</button>
-        
-        <div class="slider-box">
-            <label id="speedLabel">演奏速度: 1.0x</label>
+        <button onclick="document.getElementById('midiFile').click()">📁 重新載入 MIDI</button>
+        <button id="playBtn" onclick="startRolling()" style="background:#f43f5e; display:none;">🚀 啟動修正演奏</button>
+        <div style="display:flex; flex-direction:column; align-items:center;">
+            <label style="font-size:12px;">速度控制</label>
             <input type="range" id="speedSlider" min="0.5" max="2.0" step="0.1" value="1.0">
         </div>
     </div>
 </div>
 
-<div id="status">調整拉桿可即時縮短或拉長音板與速度。</div>
+<div id="status">修正機制：已開啟自動落點吸附與空隙補間。</div>
 <canvas id="stage"></canvas>
 
 <script>
 const canvas = document.getElementById('stage');
 const ctx = canvas.getContext('2d');
 let audioCtx = null, tracks = [], isRunning = false, midiData = null;
-let camX = 0, camY = 0, zoom = 1, globalBPM = 120;
-let speedMult = 1.0;
+let camX = 0, camY = 0, zoom = 1, globalBPM = 120, speedMult = 1.0;
 
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
 const getFreq = (m) => 440 * Math.pow(2, (m - 69) / 12);
 
-// 監聽拉桿變化
 document.getElementById('speedSlider').addEventListener('input', (e) => {
     speedMult = parseFloat(e.target.value);
-    document.getElementById('speedLabel').innerText = `演奏速度: ${speedMult.toFixed(1)}x`;
-    if (midiData) buildDynamicPaths(midiData); // 即時重繪軌道
+    if (midiData) buildCorrectedPaths(midiData);
 });
 
 document.getElementById('midiFile').addEventListener('change', async (e) => {
@@ -57,57 +51,48 @@ document.getElementById('midiFile').addEventListener('change', async (e) => {
     if (!file) return;
     midiData = await Midi.fromUrl(URL.createObjectURL(file));
     globalBPM = Math.round(midiData.header.tempos[0]?.bpm || 120);
-    buildDynamicPaths(midiData);
+    buildCorrectedPaths(midiData);
     document.getElementById('playBtn').style.display = "inline-block";
 });
 
-function buildDynamicPaths(midi) {
-    const activeStates = tracks.map(t => ({ idx: t.currentIdx, ball: t.ball })); // 記錄當前播放位置
+function buildCorrectedPaths(midi) {
     tracks = [];
     const colors = ["#fb7185", "#38bdf8"];
     const BALL_R = 10;
-    const MAX_GAP = BALL_R * 1.5; 
-
-    // 關鍵公式：縮放係數隨速度反轉。速度越快(speedMult大)，間距縮小
-    const timeScale = 700 / speedMult; 
+    const timeScale = 700 / speedMult;
 
     midi.tracks.filter(t => t.notes.length > 0).slice(0, 2).forEach((track, tIdx) => {
         let steps = [];
-        let lastY = 200 + (tIdx * 200); 
+        let lastY = 250 + (tIdx * 180); 
         
         track.notes.forEach((note, nIdx) => {
             const x = 500 + (note.time * timeScale);
             const pitchOffset = (72 - note.midi) * 3.5;
             
-            let targetY = lastY + 32 + pitchOffset; 
-            if (targetY <= lastY) targetY = lastY + 10;
+            // 規則 1：強制下滑且落差標準化
+            let targetY = lastY + 30 + pitchOffset; 
+            if (targetY <= lastY) targetY = lastY + 8;
 
-            // 音板長度隨速度變動
-            let w = Math.max(20, note.duration * (500 / speedMult)); 
+            // 規則 2：縮短音板長度 (快板邏輯)
+            let w = Math.max(25, note.duration * (450 / speedMult)); 
 
+            // 規則 3：極窄間距修正 (防止球掉落空隙)
             if (nIdx > 0) {
                 const prev = steps[nIdx - 1];
                 const gap = x - (prev.x + prev.w);
-                if (gap > MAX_GAP) prev.w = (x - prev.x) - (MAX_GAP * 0.5);
+                if (gap > BALL_R) {
+                    prev.w = (x - prev.x) - (BALL_R * 0.5); // 讓前一塊板子幾乎碰到下一塊
+                }
             }
 
             steps.push({ x, y: targetY, w, h: 12, freq: getFreq(note.midi), active: 0 });
             lastY = targetY;
         });
 
-        // 球的物理速度隨拉桿加快
-        const vx = (globalBPM / 120) * 6.0; 
-
-        // 如果已經在運行，保持球的位置比例
-        const oldState = activeStates[tIdx];
         tracks.push({
             steps,
-            ball: { 
-                x: oldState ? steps[oldState.idx].x : steps[0].x, 
-                y: oldState ? steps[oldState.idx].y - 20 : steps[0].y - 80, 
-                vx: vx, vy: 0, r: BALL_R, color: colors[tIdx] 
-            },
-            currentIdx: oldState ? oldState.idx : 0,
+            ball: { x: steps[0].x, y: steps[0].y - 50, vx: (globalBPM / 120) * 6.0, vy: 0, r: BALL_R, color: colors[tIdx] },
+            currentIdx: 0,
             oscType: tIdx === 0 ? 'triangle' : 'sine'
         });
     });
@@ -116,7 +101,7 @@ function buildDynamicPaths(midi) {
 function startRolling() {
     if (!audioCtx) audioCtx = new AudioContext();
     isRunning = true;
-    document.getElementById('playBtn').style.display = 'none';
+    document.querySelector('.ui').style.display = 'none';
 }
 
 function update() {
@@ -129,41 +114,60 @@ function update() {
 
         let target = t.steps[t.currentIdx];
         if (target) {
-            if (b.x > target.x - 5 && b.x < target.x + target.w + 5 && 
-                b.y + b.r > target.y && b.y < target.y + 20 && b.vy >= 0) {
-                b.y = target.y - b.r; b.vy = 0;
+            // --- 關鍵修正：吸附與判定範圍擴大 ---
+            // 檢查球是否在音板高度附近，且水平位置已達音板
+            const isAbove = b.y + b.r > target.y - 10 && b.y < target.y + 20;
+            const isInside = b.x > target.x - 15 && b.x < target.x + target.w + 15;
+
+            if (isInside && isAbove && b.vy >= 0) {
+                b.y = target.y - b.r; // 強制吸附到板面
+                b.vy = 0;
                 if (target.active === 0) {
                     const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-                    o.type = t.oscType; 
-                    // 音頻播放速度也隨之調整
-                    o.frequency.setValueAtTime(target.freq, audioCtx.currentTime);
+                    o.type = t.oscType; o.frequency.setValueAtTime(target.freq, audioCtx.currentTime);
                     g.gain.setValueAtTime(0.08, audioCtx.currentTime);
-                    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + (0.4 / speedMult));
+                    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
                     o.connect(g); g.connect(audioCtx.destination);
-                    o.start(); o.stop(audioCtx.currentTime + (0.4 / speedMult));
+                    o.start(); o.stop(audioCtx.currentTime + 0.3);
                     target.active = 20;
                 }
             }
-            if (b.x > target.x + target.w) t.currentIdx++;
+            
+            // 自動跳轉下一個音板 (如果球已經滾過頭)
+            if (b.x > target.x + target.w + 10) {
+                t.currentIdx++;
+            }
         }
+        
+        // 防呆重生：如果真的掉下去了，閃現到下一塊音板
+        if (target && b.y > target.y + 300) {
+            b.y = target.y - 100;
+            b.x = target.x - 20;
+            b.vy = 0;
+        }
+
         minX = Math.min(minX, b.x); maxX = Math.max(maxX, b.x);
         minY = Math.min(minY, b.y); maxY = Math.max(maxY, b.y);
     });
 
     camX += ((minX + maxX)/2 - canvas.width/2 - camX) * 0.15;
     camY += ((minY + maxY)/2 - canvas.height/2 - camY) * 0.1;
+    zoom += (Math.max(0.6, Math.min(1.1, canvas.height / ((maxY - minY) + 400))) - zoom) * 0.05;
 }
 
 function draw() {
     ctx.fillStyle = "#020617"; ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.save();
+    ctx.translate(canvas.width/2, canvas.height/2);
+    ctx.scale(zoom, zoom);
+    ctx.translate(-canvas.width/2, -canvas.height/2);
     ctx.translate(-camX, -camY);
 
     tracks.forEach(t => {
         t.steps.forEach(s => {
             ctx.fillStyle = s.active > 0 ? "#fff" : t.ball.color + "55";
             if(s.active > 0) s.active--;
-            ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, s.h, 2); ctx.fill();
+            ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, s.h, 4); ctx.fill();
         });
         ctx.fillStyle = t.ball.color;
         ctx.beginPath(); ctx.arc(t.ball.x, t.ball.y, t.ball.r, 0, Math.PI*2); ctx.fill();
