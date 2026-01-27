@@ -2,34 +2,40 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴看板機 - 物理擊球修正版</title>
+    <title>AI 木琴看板機 - 瑪利歐預設版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         body { margin: 0; background: #020617; color: #fff; font-family: sans-serif; overflow: hidden; }
-        .ui { position: fixed; top: 15px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 10px; z-index: 1000; background: rgba(15, 23, 42, 0.9); padding: 15px; border-radius: 20px; border: 1px solid #3b82f6; align-items: center; width: 95%; max-width: 800px; }
+        .ui { position: fixed; top: 15px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 10px; z-index: 1000; background: rgba(15, 23, 42, 0.9); padding: 15px; border-radius: 20px; border: 1px solid #3b82f6; align-items: center; width: 95%; max-width: 850px; backdrop-filter: blur(8px); box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
         .controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; align-items: center; }
-        .track-selector { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 10px; max-height: 80px; overflow-y: auto; background: #0f172a; padding: 10px; border-radius: 12px; width: 100%; }
-        button, label { border: none; padding: 8px 16px; border-radius: 10px; cursor: pointer; font-weight: bold; color: white; background: #3b82f6; font-size: 12px; }
-        .track-btn.active { background: #f43f5e; box-shadow: 0 0 10px #f43f5e; }
-        #status { position: fixed; bottom: 20px; width: 100%; text-align: center; color: #60a5fa; font-size: 13px; }
+        .track-selector { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 10px; max-height: 100px; overflow-y: auto; background: #0f172a; padding: 10px; border-radius: 12px; width: 100%; border: 1px inset #334155; }
+        button, label { border: none; padding: 8px 16px; border-radius: 10px; cursor: pointer; font-weight: bold; color: white; background: #3b82f6; font-size: 12px; transition: 0.2s; }
+        button:hover { background: #2563eb; transform: scale(1.02); }
+        .track-btn { background: #334155; opacity: 0.6; }
+        .track-btn.active { background: #f43f5e; opacity: 1; box-shadow: 0 0 15px rgba(244, 63, 94, 0.5); }
+        input[type="text"] { padding: 8px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: white; width: 180px; }
+        #status { position: fixed; bottom: 20px; width: 100%; text-align: center; color: #60a5fa; font-size: 13px; font-weight: bold; text-shadow: 0 2px 4px #000; }
     </style>
 </head>
 <body>
 
 <div class="ui">
     <div class="controls">
-        <label for="midiFile" style="background:#8b5cf6;">📁 載入 MIDI</label>
+        <label for="midiFile" style="background:#8b5cf6;">📁 換一首歌 (MIDI)</label>
         <input type="file" id="midiFile" accept=".mid,.midi" style="display:none">
-        <label for="bgFile" style="background:#10b981;">🖼️ 背景</label>
+        
+        <label for="bgFile" style="background:#10b981;">🖼️ 自訂背景</label>
         <input type="file" id="bgFile" accept="image/*" style="display:none">
-        <input type="text" id="userMsg" placeholder="結束留言..." value="NO MISSES!">
-        <button id="playBtn" onclick="startRolling()" style="background:#f43f5e; display:none;">🚀 啟動</button>
-        <button id="recordBtn" onclick="startRecording()" style="background:#e11d48; display:none;">📹 錄製</button>
+        
+        <input type="text" id="userMsg" placeholder="結束留言..." value="MARIO CLEAR!">
+        
+        <button id="playBtn" onclick="startRolling()" style="background:#f43f5e; display:none;">🚀 啟動演奏</button>
+        <button id="recordBtn" onclick="startRecording()" style="background:#e11d48; display:none;">📹 錄製並下載</button>
     </div>
-    <div id="trackList" class="track-selector"></div>
+    <div id="trackList" class="track-selector">正在載入預設瑪利歐曲目...</div>
 </div>
 
-<div id="status">已啟動物理碰撞補償系統</div>
+<div id="status">系統就緒 - 物理補救模式已開啟</div>
 <canvas id="stage"></canvas>
 
 <script>
@@ -42,35 +48,40 @@ let recorder = null, chunks = [];
 const BALL_VX = 4.2; 
 const BALL_R = 10;
 const DIA = BALL_R * 2; 
+const EXTENSION = DIA * 3; // 看板突出長度
 
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
-// 背景上傳
-document.getElementById('bgFile').addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (file) {
-        const reader = new FileReader();
-        reader.onload = (ev) => { bgImg = new Image(); bgImg.src = ev.target.result; };
-        reader.readAsDataURL(file);
-    }
+// --- 1. 初始化與檔案讀取 ---
+window.addEventListener('DOMContentLoaded', () => {
+    // 預設載入瑪利歐
+    fetch('Mario Bros. - Super Mario Bros. Theme.mid')
+        .then(res => res.arrayBuffer())
+        .then(buf => processMidi(buf, "Mario Bros. Theme"))
+        .catch(() => { document.getElementById('trackList').innerText = "未找到預設檔，請手動上傳。"; });
 });
 
-// MIDI 處理
 document.getElementById('midiFile').addEventListener('change', (e) => {
     const reader = new FileReader();
-    reader.onload = (ev) => {
-        fullMidi = new Midi(ev.target.result);
-        renderTracks();
-        selectTrack(findBestTrack());
-    };
+    reader.onload = (ev) => processMidi(ev.target.result, e.target.files[0].name);
     reader.readAsArrayBuffer(e.target.files[0]);
 });
 
-function findBestTrack() {
+document.getElementById('bgFile').addEventListener('change', (e) => {
+    const reader = new FileReader();
+    reader.onload = (ev) => { bgImg = new Image(); bgImg.src = ev.target.result; };
+    reader.readAsDataURL(e.target.files[0]);
+});
+
+function processMidi(buf, name) {
+    fullMidi = new Midi(buf);
+    renderTracks();
+    // 預選音符最多的軌道
     let max = -1, best = 0;
     fullMidi.tracks.forEach((t, i) => { if(t.notes.length > max) { max = t.notes.length; best = i; } });
-    return best;
+    selectTrack(best);
+    document.getElementById('status').innerText = `已載入: ${name}`;
 }
 
 function renderTracks() {
@@ -79,7 +90,7 @@ function renderTracks() {
     fullMidi.tracks.forEach((t, i) => {
         if(t.notes.length === 0) return;
         const btn = document.createElement('button');
-        btn.innerText = `軌道 ${i+1} (${t.notes.length})`;
+        btn.innerText = `軌道 ${i+1}: ${t.name || '音軌'} (${t.notes.length})`;
         btn.onclick = () => selectTrack(i);
         btn.id = `track-${i}`;
         btn.className = "track-btn";
@@ -90,64 +101,58 @@ function renderTracks() {
 function selectTrack(idx) {
     document.querySelectorAll('.track-btn').forEach(b => b.classList.remove('active'));
     document.getElementById(`track-${idx}`)?.classList.add('active');
-    buildSafePaths(fullMidi.tracks[idx]);
+    buildPaths(fullMidi.tracks[idx]);
     document.getElementById('playBtn').style.display = "inline-block";
 }
 
-function buildSafePaths(track) {
+// --- 2. 核心物理路徑算法 ---
+function buildPaths(track) {
     tracks = [];
     let steps = [];
     const notes = track.notes;
     const midis = notes.map(n => n.midi);
     const minMidi = Math.min(...midis), maxMidi = Math.max(...midis);
-    const vScale = (maxMidi - minMidi) > 24 ? 1.5 : 2.5;
+    const vScale = (maxMidi - minMidi) > 24 ? 1.5 : 2.5; // 音階平滑化
 
     let lastY = 300;
     notes.forEach((note, nIdx) => {
-        // X 座標由時間決定，但我們增加了一個緩衝倍率 580 (原 550) 來增加板距
-        let targetX = 500 + (note.time * 580);
+        let targetX = 500 + (note.time * 580); // X 軸基準時間
         let vDrop = 0;
         if (nIdx > 0) {
             const gap = note.time - (notes[nIdx-1].time + notes[nIdx-1].duration);
-            if (gap > 0.05) vDrop = Math.min(gap * 250, 180);
+            if (gap > 0.05) vDrop = Math.min(gap * 240, 160); // 休止符下墜
         }
         let targetY = lastY + 20 + (maxMidi - note.midi) * vScale + vDrop;
         if (targetY <= lastY) targetY = lastY + 12;
 
-        steps.push({
+        steps.push({ 
             x: targetX, y: targetY, 
-            w: Math.max(60, note.duration * 500), // 增加基礎寬度
-            h: 12, freq: 440 * Math.pow(2,(note.midi-69)/12), active: 0
+            w: Math.max(60, note.duration * 480), 
+            h: 12, freq: 440 * Math.pow(2,(note.midi-69)/12), active: 0 
         });
         lastY = targetY;
     });
 
-    // --- 核心補救邏輯：物理碰撞安全檢修 ---
+    // 看板物理補救：解決漏球與突出
     for (let i = 0; i < steps.length - 1; i++) {
         let curr = steps[i], next = steps[i+1];
         let currEnd = curr.x + curr.w;
 
-        // 措施 1：強制下一音板起點向前延伸，直到與前一塊重疊（防止漏球）
-        // 遵守您的指令：間距不得超過一個直徑，且必須有兩半直徑的著陸區
-        let safeLandingX = currEnd - (BALL_R * 2.5); 
+        // 補救 1：強制下一音板起點向前延伸，確保著陸區（兩半直徑重疊）
+        let safeLandingX = currEnd - (BALL_R * 2.5);
         if (next.x > safeLandingX) {
             let diff = next.x - safeLandingX;
-            next.x = safeLandingX; 
-            next.w += diff; // 補回寬度確保末端不變
+            next.x = safeLandingX;
+            next.w += diff;
         }
 
-        // 措施 2：看板突出化 (Billboard extension)
-        let minRequiredRight = currEnd + (DIA * 3);
-        if ((next.x + next.w) < minRequiredRight) {
-            next.w = minRequiredRight - next.x;
-        }
-        
-        // 措施 3：填補 X 軸空隙
+        // 補救 2：看板突出化 (右側長於前板 3 個直徑)
+        let minRight = currEnd + EXTENSION;
+        if ((next.x + next.w) < minRight) next.w = minRight - next.x;
+
+        // 補救 3：消除 X 軸大間隙
         let gap = next.x - currEnd;
-        if (gap > DIA) {
-            // 如果還是有洞，強制拉長前一塊板子來填洞
-            curr.w += (gap - 5);
-        }
+        if (gap > DIA) curr.w += (gap - 5);
     }
 
     tracks.push({
@@ -157,9 +162,10 @@ function buildSafePaths(track) {
     });
 }
 
-// 物理與錄製引擎 (優化碰撞偵測)
+// --- 3. 渲染與更新循環 ---
 function startRolling() {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
     isRunning = true;
     document.getElementById('playBtn').style.display = 'none';
     document.getElementById('recordBtn').style.display = "inline-block";
@@ -172,9 +178,10 @@ function startRecording() {
     recorder.ondataavailable = e => chunks.push(e.data);
     recorder.onstop = () => {
         const blob = new Blob(chunks, { type: 'video/mp4' });
-        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'perfect_hit.mp4'; a.click();
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'mario_performance.mp4'; a.click();
     };
     recorder.start();
+    // 重置球位置重新錄製
     const t = tracks[0];
     t.currentIdx = 0; t.ball.x = t.steps[0].x; t.ball.y = t.steps[0].y - 120; t.ball.vy = 0;
     isRunning = true;
@@ -185,17 +192,22 @@ function update() {
     const t = tracks[0], b = t.ball;
     b.vy += 0.45; b.x += b.vx; b.y += b.vy;
 
-    // 提高碰撞檢測靈敏度
     let target = t.steps[t.currentIdx];
     if (target) {
-        // 檢查球是否在音板範圍內
-        const withinX = b.x > target.x - 2 && b.x < target.x + target.w + 2;
-        const hittingTop = b.y + b.r >= target.y - 5 && b.y + b.r <= target.y + 10;
+        // 精確碰撞偵測
+        const inX = b.x > target.x - 2 && b.x < target.x + target.w + 2;
+        const inY = b.y + b.r >= target.y - 5 && b.y + b.r <= target.y + 10;
         
-        if (withinX && hittingTop && b.vy >= 0) {
+        if (inX && inY && b.vy >= 0) {
             b.y = target.y - b.r; b.vy = 0;
             if (target.active === 0) {
-                playTone(target.freq);
+                const o = audioCtx.createOscillator();
+                const g = audioCtx.createGain();
+                o.type = 'triangle'; o.frequency.value = target.freq;
+                g.gain.setTargetAtTime(0.1, audioCtx.currentTime, 0.01);
+                g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
+                o.connect(g); g.connect(audioCtx.destination);
+                o.start(); o.stop(audioCtx.currentTime + 0.4);
                 target.active = 1;
             }
         }
@@ -208,16 +220,6 @@ function update() {
         isRunning = false;
         if (recorder?.state === "recording") recorder.stop();
     }
-}
-
-function playTone(freq) {
-    const o = audioCtx.createOscillator();
-    const g = audioCtx.createGain();
-    o.type = 'triangle'; o.frequency.value = freq;
-    g.gain.setTargetAtTime(0.1, audioCtx.currentTime, 0.01);
-    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
-    o.connect(g); g.connect(audioCtx.destination);
-    o.start(); o.stop(audioCtx.currentTime + 0.4);
 }
 
 function draw() {
