@@ -2,30 +2,24 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴階梯機 - 修正版</title>
+    <title>AI 木琴階梯機 - 照片增強版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --panel: rgba(15, 23, 42, 0.98); }
         body { margin: 0; background: #020617; color: #fff; font-family: sans-serif; overflow: hidden; }
         
-        /* 起始面板強制定案 */
         #setupPanel { position: fixed; inset: 0; background: radial-gradient(circle at center, #1e293b, #020617); z-index: 5000; display: flex; justify-content: center; align-items: center; padding: 20px; }
         .config-card { background: var(--panel); padding: 30px; border-radius: 24px; border: 2px solid #334155; width: 100%; max-width: 500px; box-shadow: 0 25px 50px rgba(0,0,0,0.8); }
         
-        .section-title { font-size: 14px; color: var(--accent); margin-bottom: 8px; font-weight: bold; }
-        .track-list { margin: 10px 0 20px 0; max-height: 200px; overflow-y: auto; background: #0f172a; border-radius: 12px; padding: 10px; border: 1px solid #334155; }
-        .track-item { display: flex; justify-content: space-between; align-items: center; padding: 12px; margin-bottom: 8px; background: #1e293b; border-radius: 8px; cursor: pointer; border: 1px solid transparent; }
-        .track-item:hover { background: #26354a; }
-        .track-item.active { background: var(--accent); border-color: #fff; }
+        .section-title { font-size: 14px; color: var(--accent); margin: 15px 0 5px 0; font-weight: bold; }
+        .track-list { margin: 10px 0; max-height: 180px; overflow-y: auto; background: #0f172a; border-radius: 12px; padding: 10px; border: 1px solid #334155; }
+        .track-item { display: flex; justify-content: space-between; align-items: center; padding: 12px; margin-bottom: 8px; background: #1e293b; border-radius: 8px; cursor: pointer; }
+        .track-item.active { background: var(--accent); border: 1px solid #fff; }
 
-        input[type="text"], input[type="file"] { width: 100%; padding: 12px; margin-bottom: 15px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: #fff; box-sizing: border-box; }
-        .btn { width: 100%; padding: 16px; border: none; border-radius: 12px; background: var(--accent); color: white; font-weight: bold; cursor: pointer; font-size: 16px; transition: 0.3s; }
-        .btn:disabled { opacity: 0.3; cursor: not-allowed; }
-
-        /* 錄影控制列 */
-        .record-ui { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; display: none; gap: 10px; background: var(--panel); padding: 12px 25px; border-radius: 50px; border: 1px solid #3b82f6; }
-        #recBtn { background: #ef4444; color: white; border: none; padding: 10px 25px; border-radius: 20px; cursor: pointer; font-weight: bold; }
+        input[type="text"], input[type="file"] { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: #fff; box-sizing: border-box; margin-bottom: 10px; }
+        .btn { width: 100%; padding: 16px; border: none; border-radius: 12px; background: var(--accent); color: white; font-weight: bold; cursor: pointer; font-size: 16px; }
         
+        .record-ui { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; display: none; background: var(--panel); padding: 12px 25px; border-radius: 50px; border: 1px solid #3b82f6; }
         #finalModal { position: fixed; inset: 0; background: rgba(0,0,0,0.9); display: none; justify-content: center; align-items: center; z-index: 6000; }
     </style>
 </head>
@@ -33,31 +27,31 @@
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="margin:0 0 20px 0; text-align:center;">🎬 影片創作設定</h2>
+        <h2 style="margin:0 0 10px 0; text-align:center;">🎹 木琴影片製作</h2>
         
-        <div class="section-title">1. 上傳音樂 (或等待預設加載)</div>
+        <div class="section-title">1. 音樂與軌道 (點擊試聽完整長度)</div>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleMidiUpload(this)">
-        <div id="trackContainer" class="track-list">正在加載預設曲目...</div>
+        <div id="trackContainer" class="track-list">等待加載中...</div>
         
-        <div class="section-title">2. 上傳照片 (可多選)</div>
+        <div class="section-title">2. 背景照片 (必選，可多選)</div>
         <input type="file" id="galleryFiles" multiple accept="image/*">
         
-        <div class="section-title">3. 錄影結束留言</div>
-        <input type="text" id="msgInit" placeholder="輸入想說的話..." value="Thanks for Listening!">
+        <div class="section-title">3. 結語留言</div>
+        <input type="text" id="msgInit" value="Thanks for Watching!">
         
         <button id="entryBtn" class="btn" onclick="enterScene()" disabled>請先選擇一個音軌</button>
     </div>
 </div>
 
 <div class="record-ui" id="recordUI">
-    <button id="recBtn" onclick="toggleRecord()">🔴 開始演奏與錄影</button>
+    <button id="recBtn" style="background:#ef4444; color:white; border:none; padding:10px 25px; border-radius:20px; cursor:pointer;" onclick="toggleRecord()">🔴 開始錄影</button>
 </div>
 
 <div id="finalModal">
     <div class="config-card" style="max-width:350px;">
-        <h3 style="text-align:center;">最後確認留言</h3>
+        <h3>確認留言並存檔</h3>
         <input type="text" id="finalMsg">
-        <button class="btn" onclick="executeFinalSave()">確認存檔並儲存影片</button>
+        <button class="btn" onclick="executeFinalSave()">確認存檔</button>
     </div>
 </div>
 
@@ -75,13 +69,12 @@ const cornerImg = new Image(); cornerImg.src = 'IMG_6604.png';
 const GRAVITY = 0.55, BALL_VX = 4.2, BALL_R = 10, BALL_DIA = 20;
 canvas.width = window.innerWidth; canvas.height = window.innerHeight;
 
-// --- 預設曲目載入 ---
 window.onload = async () => {
     try {
-        const res = await fetch('Mario Bros. - Super Mario Bros. Theme.mid');
+        const res = await fetch('Mario Bros. - Super Mario SMB.mid'); // 確保檔名正確
         const buf = await res.arrayBuffer();
         parseMidi(buf);
-    } catch(e) { document.getElementById('trackContainer').innerText = "請手動上傳 MIDI 檔案"; }
+    } catch(e) { document.getElementById('trackContainer').innerText = "請手動上傳 MIDI"; }
 };
 
 async function handleMidiUpload(input) {
@@ -99,13 +92,12 @@ function parseMidi(buf) {
         if(t.notes.length === 0) return;
         const item = document.createElement('div');
         item.className = "track-item";
-        item.innerHTML = `<div><strong>軌道 ${i+1}: ${t.name || '音軌'}</strong><br><small>${t.notes.length} 個音符</small></div><span style="font-size:12px; opacity:0.7;">▶ 播放中</span>`;
+        item.innerHTML = `<div><strong>軌道 ${i+1}</strong> (${t.notes.length} notes)</div>`;
         item.onclick = () => startFullPreview(i, item);
         container.appendChild(item);
     });
 }
 
-// --- 修正：完整軌道試聽 ---
 function stopPreview() {
     previewOscillators.forEach(o => { try { o.stop(); } catch(e) {} });
     previewOscillators = [];
@@ -115,18 +107,16 @@ function stopPreview() {
 function startFullPreview(idx, element) {
     stopPreview();
     if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    
     selectedTrackIdx = idx;
     document.querySelectorAll('.track-item').forEach(el => el.classList.remove('active'));
     element.classList.add('active');
     document.getElementById('entryBtn').disabled = false;
 
     const track = fullMidi.tracks[idx];
-    const notes = track.notes;
-    const totalTime = notes[notes.length-1].time + 1;
+    const totalTime = track.notes[track.notes.length-1].time + 2;
 
-    function loop() {
-        notes.forEach(n => {
+    function play() {
+        track.notes.forEach(n => {
             const o = audioCtx.createOscillator(), g = audioCtx.createGain();
             o.type = 'triangle';
             o.frequency.value = 440 * Math.pow(2, (n.midi - 69) / 12);
@@ -137,9 +127,9 @@ function startFullPreview(idx, element) {
             o.start(st); o.stop(st + 0.5);
             previewOscillators.push(o);
         });
-        previewTimeout = setTimeout(loop, totalTime * 1000);
+        previewTimeout = setTimeout(play, totalTime * 1000);
     }
-    loop();
+    play();
 }
 
 async function enterScene() {
@@ -147,13 +137,24 @@ async function enterScene() {
     const gFiles = document.getElementById('galleryFiles').files;
     currentMsg = document.getElementById('msgInit').value;
 
-    for (let f of gFiles) {
-        const img = new Image(); img.src = URL.createObjectURL(f);
+    // 建立無縫路徑
+    buildSeamlessSteps(fullMidi.tracks[selectedTrackIdx]);
+
+    // 取得路徑總長度來分佈照片
+    const lastStep = tracks[0].steps[tracks[0].steps.length - 1];
+    const totalX = lastStep.x;
+
+    for (let i = 0; i < gFiles.length; i++) {
+        const img = new Image(); img.src = URL.createObjectURL(gFiles[i]);
         await new Promise(r => img.onload = r);
-        gallery.push({ img, x: -800 - Math.random()*500, yOff: Math.random()*1200-600, w: 300 });
+        gallery.push({
+            img,
+            x: (i / gFiles.length) * totalX + (Math.random() * 200 - 100), // 分散在整個路徑
+            yOff: Math.random() * 600 - 300,
+            w: 350
+        });
     }
 
-    buildSeamlessSteps(fullMidi.tracks[selectedTrackIdx]);
     document.getElementById('setupPanel').style.display = 'none';
     document.getElementById('recordUI').style.display = 'flex';
     audioDest = audioCtx.createMediaStreamDestination();
@@ -175,7 +176,7 @@ function buildSeamlessSteps(track) {
         currentY += 30;
         steps.push({ x: x, y: currentY, w: w, freq: 440 * Math.pow(2, (n.midi - 69) / 12), active: 0 });
     });
-    // 修正：球初始位置就在第一塊正上方，消除聲音延遲
+    // 球直接放在第一階上面，按錄影立刻響
     tracks = [{ steps, ball: { x: steps[0].x + 5, y: steps[0].y - 20, vx: BALL_VX, vy: 0 }, cur: 0 }];
 }
 
@@ -187,11 +188,10 @@ function toggleRecord() {
         recorder.ondataavailable = e => chunks.push(e.data);
         recorder.onstop = exportVideo;
         recorder.start();
-        // 重設球位置
         tracks[0].cur = 0; 
         tracks[0].ball.x = tracks[0].steps[0].x + 5;
         tracks[0].ball.y = tracks[0].steps[0].y - 20;
-        document.getElementById('recBtn').innerText = "⏹️ 結束並儲存影片";
+        document.getElementById('recBtn').innerText = "⏹️ 停止並下載影片";
     } else {
         document.getElementById('finalMsg').value = currentMsg;
         document.getElementById('finalModal').style.display = 'flex';
@@ -209,7 +209,7 @@ function executeFinalSave() {
 function exportVideo() {
     const blob = new Blob(chunks, { type: 'video/mp4' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = `music_creation_${Date.now()}.mp4`; a.click();
+    a.download = `xylophone_run.mp4`; a.click();
     location.reload();
 }
 
@@ -227,8 +227,7 @@ function update() {
                 g.gain.setTargetAtTime(0.2, audioCtx.currentTime, 0.01);
                 g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
                 o.connect(g); g.connect(audioCtx.destination); g.connect(audioDest);
-                o.start(); o.stop(audioCtx.currentTime + 0.4);
-                s.active = 1;
+                o.start(); o.stop(audioCtx.currentTime + 0.4); s.active = 1;
             }
         }
     }
@@ -241,10 +240,10 @@ function draw() {
     ctx.fillStyle = "#020617"; ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.save(); ctx.translate(-camX, -camY);
     
-    // 背景照片牆
+    // 繪製照片背景
     gallery.forEach(item => {
         const h = item.w * (item.img.height/item.img.width);
-        ctx.drawImage(item.img, item.x, camY + item.yOff, item.w, h);
+        ctx.drawImage(item.img, item.x, (item.yOff + camY/1.5), item.w, h); // 增加視差效果
     });
 
     if (tracks[0]) {
@@ -253,16 +252,13 @@ function draw() {
             ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, 12, 4); ctx.fill();
         });
         ctx.fillStyle = "#f43f5e"; ctx.beginPath(); ctx.arc(tracks[0].ball.x, tracks[0].ball.y, BALL_R, 0, Math.PI*2); ctx.fill();
-        if (isFinishing) {
-            ctx.fillStyle = "white"; ctx.font = "bold 60px sans-serif"; ctx.textAlign = "center";
-            ctx.fillText(currentMsg, tracks[0].ball.x, tracks[0].ball.y - 80);
-        }
     }
     ctx.restore();
     
-    // 右下角簽名圖
-    if (isFinishing && cornerImg.complete) {
-        ctx.drawImage(cornerImg, canvas.width-220, canvas.height-220, 180, 180);
+    if (isFinishing) {
+        ctx.fillStyle = "white"; ctx.font = "bold 60px sans-serif"; ctx.textAlign = "center";
+        ctx.fillText(currentMsg, canvas.width/2, canvas.height/2);
+        if (cornerImg.complete) ctx.drawImage(cornerImg, canvas.width-220, canvas.height-220, 180, 180);
     }
     update(); requestAnimationFrame(draw);
 }
