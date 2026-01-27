@@ -2,41 +2,58 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴畫廊機 - 最終存檔版</title>
+    <title>AI 木琴畫廊機 - 軌道選擇版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
-        :root { --accent: #3b82f6; --panel: rgba(15, 23, 42, 0.95); }
+        :root { --accent: #3b82f6; --panel: rgba(15, 23, 42, 0.98); }
         body { margin: 0; background: #020617; color: #fff; font-family: sans-serif; overflow: hidden; }
         
         /* 起始面板 */
         #setupPanel {
             position: fixed; inset: 0; background: radial-gradient(circle at center, #1e293b, #020617);
-            z-index: 3000; display: flex; justify-content: center; align-items: center;
+            z-index: 3000; display: flex; justify-content: center; align-items: center; padding: 20px;
         }
         .config-card {
             background: var(--panel); padding: 30px; border-radius: 24px; border: 1px solid #334155;
-            width: 400px; box-shadow: 0 25px 50px rgba(0,0,0,0.5); text-align: center;
+            width: 100%; max-width: 480px; box-shadow: 0 25px 50px rgba(0,0,0,0.5);
         }
-        input { width: 100%; padding: 12px; margin: 10px 0; border-radius: 10px; border: 1px solid #334155; background: #0f172a; color: #fff; box-sizing: border-box; }
-        .btn { width: 100%; padding: 15px; border: none; border-radius: 12px; background: var(--accent); color: white; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        .track-list { 
+            margin: 15px 0; max-height: 150px; overflow-y: auto; 
+            background: #0f172a; border-radius: 10px; padding: 10px; border: 1px inset #334155;
+        }
+        .track-item {
+            padding: 8px; margin: 4px; background: #1e293b; border-radius: 6px; cursor: pointer;
+            font-size: 13px; border: 1px solid transparent; transition: 0.2s;
+        }
+        .track-item:hover { border-color: var(--accent); }
+        .track-item.active { background: var(--accent); color: white; }
+        
+        input { width: 100%; padding: 10px; margin: 8px 0; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: #fff; box-sizing: border-box; }
+        .btn { width: 100%; padding: 14px; border: none; border-radius: 10px; background: var(--accent); color: white; font-weight: bold; cursor: pointer; margin-top: 10px; }
 
-        /* 控制列 */
+        /* 控制列與錄影 */
         .record-ui { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; display: none; gap: 10px; background: var(--panel); padding: 12px 20px; border-radius: 50px; border: 1px solid #3b82f6; }
-        #recBtn { background: #ef4444; color: white; border: none; padding: 10px 20px; border-radius: 20px; cursor: pointer; font-weight: bold; }
+        #recBtn { background: #ef4444; color: white; border: none; padding: 10px 24px; border-radius: 20px; cursor: pointer; font-weight: bold; }
 
-        /* 留言彈窗 */
-        #modal { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: none; justify-content: center; align-items: center; z-index: 4000; }
+        #modal { position: fixed; inset: 0; background: rgba(0,0,0,0.85); display: none; justify-content: center; align-items: center; z-index: 4000; }
     </style>
 </head>
 <body>
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="color:var(--accent)">🎨 創作起始設定</h2>
-        <input type="file" id="midiFile" accept=".mid,.midi">
+        <h2 style="margin-top:0; color:var(--accent)">🎵 影片製作設定</h2>
+        <label style="font-size:12px; color:#94a3b8">1. 選擇 MIDI 並挑選主旋律軌道</label>
+        <input type="file" id="midiFile" accept=".mid,.midi" onchange="loadMidi(this)">
+        <div id="trackContainer" class="track-list">等待上傳 MIDI...</div>
+        
+        <label style="font-size:12px; color:#94a3b8">2. 牆面掛畫 (多選)</label>
         <input type="file" id="galleryFiles" multiple accept="image/*">
-        <input type="text" id="msgInit" value="Happy Ending!">
-        <button class="btn" onclick="initScene()">進入場景</button>
+        
+        <label style="font-size:12px; color:#94a3b8">3. 預設結語</label>
+        <input type="text" id="msgInit" value="With Love.">
+        
+        <button id="entryBtn" class="btn" onclick="enterScene()" disabled style="opacity:0.5">請先選擇軌道</button>
     </div>
 </div>
 
@@ -45,7 +62,7 @@
 </div>
 
 <div id="modal">
-    <div class="config-card">
+    <div class="config-card" style="max-width:320px">
         <h3>確認最終留言</h3>
         <input type="text" id="finalMsg">
         <button class="btn" onclick="executeFinalSave()">確認存檔並結束</button>
@@ -57,7 +74,7 @@
 <script>
 const canvas = document.getElementById('stage');
 const ctx = canvas.getContext('2d');
-let audioCtx, tracks = [], isRunning = false, fullMidi, gallery = [];
+let audioCtx, tracks = [], isRunning = false, fullMidi, gallery = [], selectedTrackIdx = -1;
 let camX = 0, camY = 0, recorder, chunks = [], audioDest;
 let isFinishing = false, currentMsg = "";
 
@@ -67,8 +84,32 @@ cornerImg.src = 'IMG_6604.png';
 const GRAVITY = 0.675, BOUNCE = 0.05, BALL_VX = 4.2, BALL_R = 10;
 canvas.width = window.innerWidth; canvas.height = window.innerHeight;
 
-async function initScene() {
-    const mFile = document.getElementById('midiFile').files[0];
+// --- 軌道選擇邏輯 ---
+async function loadMidi(input) {
+    const file = input.files[0];
+    if(!file) return;
+    const buf = await file.arrayBuffer();
+    fullMidi = new Midi(buf);
+    
+    const container = document.getElementById('trackContainer');
+    container.innerHTML = "";
+    fullMidi.tracks.forEach((t, i) => {
+        if(t.notes.length === 0) return;
+        const div = document.createElement('div');
+        div.className = "track-item";
+        div.innerText = `軌道 ${i+1}: ${t.name || '未命名'} (${t.notes.length} 音符)`;
+        div.onclick = () => {
+            selectedTrackIdx = i;
+            document.querySelectorAll('.track-item').forEach(el => el.classList.remove('active'));
+            div.classList.add('active');
+            document.getElementById('entryBtn').disabled = false;
+            document.getElementById('entryBtn').style.opacity = 1;
+        };
+        container.appendChild(div);
+    });
+}
+
+async function enterScene() {
     const gFiles = document.getElementById('galleryFiles').files;
     currentMsg = document.getElementById('msgInit').value;
 
@@ -78,10 +119,7 @@ async function initScene() {
         gallery.push({ img, x: -500-Math.random()*300, yOff: Math.random()*800-400, w: 250 });
     }
 
-    const buf = mFile ? await mFile.arrayBuffer() : await (await fetch('I-Just-Called-To-Say-I-Love-You-1.mid')).arrayBuffer();
-    fullMidi = new Midi(buf);
-    let t = fullMidi.tracks.reduce((prev, curr) => (curr.notes.length > prev.notes.length) ? curr : prev);
-    build(t);
+    build(fullMidi.tracks[selectedTrackIdx]);
 
     document.getElementById('setupPanel').style.display = 'none';
     document.getElementById('recordUI').style.display = 'flex';
@@ -98,7 +136,7 @@ function build(track) {
     track.notes.forEach((n, i) => {
         let tx = 500 + (n.time * 580);
         let drop = i > 0 ? Math.min((n.time - track.notes[i-1].time) * 300, 220) : 0;
-        let ty = lastY + 25 + (maxM - n.midi) * 2.5 + drop;
+        let ty = lastY + 25 + (maxM - n.midi) * 2.8 + drop; // 稍微拉開垂直距離
         steps.push({ x: tx, y: ty, w: Math.max(75, n.duration * 480), freq: 440 * Math.pow(2,(n.midi-69)/12), active: 0 });
         lastY = ty;
     });
@@ -127,13 +165,13 @@ function executeFinalSave() {
     currentMsg = document.getElementById('finalMsg').value;
     document.getElementById('modal').style.display = 'none';
     isFinishing = true;
-    setTimeout(() => recorder.stop(), 2000);
+    setTimeout(() => { if(recorder.state==='recording') recorder.stop(); }, 2000);
 }
 
 function exportVideo() {
     const blob = new Blob(chunks, { type: 'video/mp4' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = `music_video_${Date.now()}.mp4`; a.click();
+    a.download = `music_creation_${Date.now()}.mp4`; a.click();
     location.reload();
 }
 
@@ -161,7 +199,8 @@ function draw() {
     ctx.fillStyle = "#020617"; ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.save(); ctx.translate(-camX, -camY);
     gallery.forEach(item => {
-        ctx.drawImage(item.img, item.x, camY + item.yOff, item.w, item.w * (item.img.height/item.img.width));
+        const h = item.w * (item.img.height/item.img.width);
+        ctx.drawImage(item.img, item.x, camY + item.yOff, item.w, h);
     });
     if (tracks[0]) {
         tracks[0].steps.forEach(s => {
