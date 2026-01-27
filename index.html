@@ -2,44 +2,51 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴階梯機 - 節拍精準版</title>
+    <title>AI 木琴階梯機 - Mario 預設版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --panel: rgba(15, 23, 42, 0.98); }
         body { margin: 0; background: #020617; color: #fff; font-family: sans-serif; overflow: hidden; }
         #setupPanel { position: fixed; inset: 0; background: radial-gradient(circle at center, #1e293b, #020617); z-index: 5000; display: flex; justify-content: center; align-items: center; padding: 20px; }
-        .config-card { background: var(--panel); padding: 40px; border-radius: 24px; border: 2px solid #334155; width: 480px; }
+        .config-card { background: var(--panel); padding: 40px; border-radius: 24px; border: 2px solid #334155; width: 480px; box-shadow: 0 25px 50px rgba(0,0,0,0.8); }
         .section-title { font-size: 14px; color: var(--accent); margin: 20px 0 8px 0; font-weight: bold; }
-        .track-list { margin: 10px 0; max-height: 180px; overflow-y: auto; background: #070b14; border-radius: 12px; padding: 10px; }
+        .track-list { margin: 10px 0; max-height: 180px; overflow-y: auto; background: #070b14; border-radius: 12px; padding: 10px; border: 1px solid #1e293b; }
         .track-item { padding: 12px; margin-bottom: 8px; background: #1e293b; border-radius: 8px; cursor: pointer; font-size: 13px; }
-        .track-item.active { background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+        .track-item.active { background: var(--accent); border: 1px solid #fff; }
         .record-ui { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; display: none; gap: 15px; background: var(--panel); padding: 12px 30px; border-radius: 50px; border: 1px solid #3b82f6; align-items: center; }
         .ctrl-btn { border: none; padding: 10px 24px; border-radius: 20px; cursor: pointer; font-weight: bold; }
         #playBtn { background: #10b981; color: white; }
         #recBtn { background: #ef4444; color: white; }
         input { width: 100%; padding: 14px; margin-bottom: 12px; border-radius: 10px; border: 1px solid #334155; background: #0f172a; color: #fff; box-sizing: border-box; }
         .btn { width: 100%; padding: 18px; border-radius: 12px; background: var(--accent); color: white; border:none; font-weight: bold; cursor:pointer; }
+        .loading-text { font-size: 12px; color: #64748b; text-align: center; margin-top: 5px; }
     </style>
 </head>
 <body>
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="text-align:center;">🎹 節拍對齊版</h2>
-        <div class="section-title">1. MIDI 軌道</div>
+        <h2 style="text-align:center; margin-bottom:5px;">🍄 Mario 木琴工坊</h2>
+        <p style="text-align:center; font-size:14px; color:#94a3b8; margin-bottom:20px;">預設載入經典瑪利歐主題曲</p>
+        
+        <div class="section-title">1. 音樂軌道 (已預載 Mario)</div>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleMidiUpload(this)">
-        <div id="trackContainer" class="track-list">等待上傳...</div>
+        <div id="trackContainer" class="track-list">正在自動掃描音樂...</div>
+        
         <div class="section-title">2. 背景畫廊</div>
         <input type="file" id="galleryFiles" multiple accept="image/*">
-        <div class="section-title">3. 結語</div>
-        <input type="text" id="msgInit" value="Perfect Rhythm!">
-        <button id="entryBtn" class="btn" onclick="enterScene()" disabled>進入場景</button>
+        
+        <div class="section-title">3. 錄影結束留言</div>
+        <input type="text" id="msgInit" value="It's-a Me, Mario!">
+        
+        <button id="entryBtn" class="btn" onclick="enterScene()" disabled>準備開始表演</button>
+        <div class="loading-text">請先在上方點選一個音軌進行試聽</div>
     </div>
 </div>
 
 <div class="record-ui" id="recordUI">
-    <button id="playBtn" class="ctrl-btn" onclick="togglePlay()">▶ 播放</button>
-    <button id="recBtn" class="ctrl-btn" onclick="toggleRecord()">🔴 錄製</button>
+    <button id="playBtn" class="ctrl-btn" onclick="togglePlay()">▶ 播放球</button>
+    <button id="recBtn" class="ctrl-btn" onclick="toggleRecord()">🔴 啟動錄影</button>
 </div>
 
 <canvas id="stage"></canvas>
@@ -53,27 +60,36 @@ let isFinishing = false, isRecording = false, currentMsg = "";
 let previewActiveNodes = [], previewTimeout;
 
 const cornerImg = new Image(); cornerImg.src = 'IMG_6604.png';
-
-// --- 精準節拍參數 ---
-const TIME_SCALE = 250; // 降低比例以減少繪圖壓力
-const BALL_VX = 4.167; // 嚴格匹配 60FPS 下的位移
-const GRAVITY = 0.55; 
-const BALL_R = 10;
+const GRAVITY = 0.55, BALL_VX = 4.2, BALL_R = 10;
+const TIME_SCALE = 250; 
 
 canvas.width = window.innerWidth; canvas.height = window.innerHeight;
 
+// 自動預載 Mario MIDI
+window.addEventListener('load', async () => {
+    try {
+        const response = await fetch('Mario Bros. - Super Mario Bros. Theme.mid');
+        if (response.ok) {
+            const buffer = await response.arrayBuffer();
+            parseMidi(buffer);
+        }
+    } catch (e) {
+        document.getElementById('trackContainer').innerText = "請手動上傳 MIDI 檔案";
+    }
+});
+
 function playXylophoneTone(freq, destination, startTime = 0) {
     const now = startTime || audioCtx.currentTime;
-    const osc1 = audioCtx.createOscillator();
-    const gain1 = audioCtx.createGain();
-    osc1.type = 'triangle';
-    osc1.frequency.value = freq;
-    gain1.gain.setValueAtTime(0, now);
-    gain1.gain.linearRampToValueAtTime(0.2, now + 0.01);
-    gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
-    osc1.connect(gain1); gain1.connect(destination);
-    osc1.start(now); osc1.stop(now + 0.6);
-    return [osc1];
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(freq, now);
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.3, now + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+    osc.connect(gain); gain.connect(destination);
+    osc.start(now); osc.stop(now + 0.5);
+    return [osc];
 }
 
 function handleMidiUpload(input) {
@@ -90,7 +106,7 @@ function parseMidi(buf) {
         if(t.notes.length === 0) return;
         const item = document.createElement('div');
         item.className = "track-item";
-        item.innerHTML = `軌道 ${i+1} (${t.notes.length} 音符)`;
+        item.innerHTML = `軌道 ${i+1} (${t.notes.length} 音符) - ${t.name || 'Instrument'}`;
         item.onclick = () => start10sPreview(i, item);
         container.appendChild(item);
     });
@@ -143,7 +159,7 @@ async function enterScene() {
 function buildSteps(track) {
     let steps = [], currentY = 300;
     track.notes.forEach((n, i) => {
-        let x = n.time * TIME_SCALE * (BALL_VX / 4.167); // 根據速度微調縮放
+        let x = n.time * TIME_SCALE;
         let w = n.duration * TIME_SCALE;
         if (i > 0) {
             let gap = x - (steps[i-1].x + steps[i-1].w);
@@ -157,7 +173,7 @@ function buildSteps(track) {
 
 function togglePlay() {
     isBallMoving = !isBallMoving;
-    document.getElementById('playBtn').innerText = isBallMoving ? "⏸ 暫停" : "▶ 播放";
+    document.getElementById('playBtn').innerText = isBallMoving ? "⏸ 暫停" : "▶ 播放球";
 }
 
 function toggleRecord() {
@@ -170,6 +186,7 @@ function toggleRecord() {
         recorder.start();
         isRecording = true;
         document.getElementById('recBtn').innerText = "⏹ 存檔";
+        document.getElementById('recBtn').style.background = "#991b1b";
     } else {
         isFinishing = true; isBallMoving = false;
         setTimeout(() => recorder.stop(), 2000);
@@ -179,7 +196,7 @@ function toggleRecord() {
 function saveVideo() {
     const blob = new Blob(chunks, { type: 'video/webm' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = `sync_perf_${Date.now()}.webm`; a.click();
+    a.download = `mario_perf_${Date.now()}.webm`; a.click();
     setTimeout(() => location.reload(), 500);
 }
 
