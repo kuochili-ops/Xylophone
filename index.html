@@ -2,11 +2,11 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴看板機 - 瑪利歐預設版</title>
+    <title>AI 木琴看板機 - 加重物理版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         body { margin: 0; background: #020617; color: #fff; font-family: sans-serif; overflow: hidden; }
-        .ui { position: fixed; top: 15px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 10px; z-index: 1000; background: rgba(15, 23, 42, 0.9); padding: 15px; border-radius: 20px; border: 1px solid #3b82f6; align-items: center; width: 95%; max-width: 850px; backdrop-filter: blur(8px); box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        .ui { position: fixed; top: 15px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 10px; z-index: 1000; background: rgba(15, 23, 42, 0.9); padding: 15px; border-radius: 20px; border: 1px solid #3b82f6; align-items: center; width: 95%; max-width: 850px; backdrop-filter: blur(8px); }
         .controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; align-items: center; }
         .track-selector { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 10px; max-height: 100px; overflow-y: auto; background: #0f172a; padding: 10px; border-radius: 12px; width: 100%; border: 1px inset #334155; }
         button, label { border: none; padding: 8px 16px; border-radius: 10px; cursor: pointer; font-weight: bold; color: white; background: #3b82f6; font-size: 12px; transition: 0.2s; }
@@ -14,28 +14,25 @@
         .track-btn { background: #334155; opacity: 0.6; }
         .track-btn.active { background: #f43f5e; opacity: 1; box-shadow: 0 0 15px rgba(244, 63, 94, 0.5); }
         input[type="text"] { padding: 8px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: white; width: 180px; }
-        #status { position: fixed; bottom: 20px; width: 100%; text-align: center; color: #60a5fa; font-size: 13px; font-weight: bold; text-shadow: 0 2px 4px #000; }
+        #status { position: fixed; bottom: 20px; width: 100%; text-align: center; color: #f43f5e; font-size: 13px; font-weight: bold; }
     </style>
 </head>
 <body>
 
 <div class="ui">
     <div class="controls">
-        <label for="midiFile" style="background:#8b5cf6;">📁 換一首歌 (MIDI)</label>
+        <label for="midiFile" style="background:#8b5cf6;">📁 載入 MIDI</label>
         <input type="file" id="midiFile" accept=".mid,.midi" style="display:none">
-        
         <label for="bgFile" style="background:#10b981;">🖼️ 自訂背景</label>
         <input type="file" id="bgFile" accept="image/*" style="display:none">
-        
-        <input type="text" id="userMsg" placeholder="結束留言..." value="MARIO CLEAR!">
-        
-        <button id="playBtn" onclick="startRolling()" style="background:#f43f5e; display:none;">🚀 啟動演奏</button>
-        <button id="recordBtn" onclick="startRecording()" style="background:#e11d48; display:none;">📹 錄製並下載</button>
+        <input type="text" id="userMsg" placeholder="結束留言..." value="HEAVY LOAD!">
+        <button id="playBtn" onclick="startRolling()" style="background:#f43f5e; display:none;">🚀 啟動</button>
+        <button id="recordBtn" onclick="startRecording()" style="background:#e11d48; display:none;">📹 錄製影片</button>
     </div>
-    <div id="trackList" class="track-selector">正在載入預設瑪利歐曲目...</div>
+    <div id="trackList" class="track-selector"></div>
 </div>
 
-<div id="status">系統就緒 - 物理補救模式已開啟</div>
+<div id="status">物理設定：球體重量 +50% (重力加速)</div>
 <canvas id="stage"></canvas>
 
 <script>
@@ -45,21 +42,21 @@ let audioCtx = null, tracks = [], isRunning = false, fullMidi = null;
 let camX = 0, camY = 0, bgImg = null;
 let recorder = null, chunks = [];
 
+// --- 物理參數調整 ---
 const BALL_VX = 4.2; 
 const BALL_R = 10;
+const GRAVITY = 0.675; // 原為 0.45，增加 50% 重量感 (0.45 * 1.5)
 const DIA = BALL_R * 2; 
-const EXTENSION = DIA * 3; // 看板突出長度
+const EXTENSION = DIA * 3; 
 
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
-// --- 1. 初始化與檔案讀取 ---
 window.addEventListener('DOMContentLoaded', () => {
-    // 預設載入瑪利歐
     fetch('Mario Bros. - Super Mario Bros. Theme.mid')
         .then(res => res.arrayBuffer())
-        .then(buf => processMidi(buf, "Mario Bros. Theme"))
-        .catch(() => { document.getElementById('trackList').innerText = "未找到預設檔，請手動上傳。"; });
+        .then(buf => processMidi(buf, "Mario Bros."))
+        .catch(() => { document.getElementById('trackList').innerText = "未找到預設檔。"; });
 });
 
 document.getElementById('midiFile').addEventListener('change', (e) => {
@@ -77,11 +74,10 @@ document.getElementById('bgFile').addEventListener('change', (e) => {
 function processMidi(buf, name) {
     fullMidi = new Midi(buf);
     renderTracks();
-    // 預選音符最多的軌道
     let max = -1, best = 0;
     fullMidi.tracks.forEach((t, i) => { if(t.notes.length > max) { max = t.notes.length; best = i; } });
     selectTrack(best);
-    document.getElementById('status').innerText = `已載入: ${name}`;
+    document.getElementById('status').innerText = `已載入: ${name} (加重模式)`;
 }
 
 function renderTracks() {
@@ -90,7 +86,7 @@ function renderTracks() {
     fullMidi.tracks.forEach((t, i) => {
         if(t.notes.length === 0) return;
         const btn = document.createElement('button');
-        btn.innerText = `軌道 ${i+1}: ${t.name || '音軌'} (${t.notes.length})`;
+        btn.innerText = `軌道 ${i+1} (${t.notes.length})`;
         btn.onclick = () => selectTrack(i);
         btn.id = `track-${i}`;
         btn.className = "track-btn";
@@ -105,67 +101,58 @@ function selectTrack(idx) {
     document.getElementById('playBtn').style.display = "inline-block";
 }
 
-// --- 2. 核心物理路徑算法 ---
 function buildPaths(track) {
     tracks = [];
     let steps = [];
     const notes = track.notes;
     const midis = notes.map(n => n.midi);
     const minMidi = Math.min(...midis), maxMidi = Math.max(...midis);
-    const vScale = (maxMidi - minMidi) > 24 ? 1.5 : 2.5; // 音階平滑化
+    const vScale = (maxMidi - minMidi) > 24 ? 1.5 : 2.5;
 
     let lastY = 300;
     notes.forEach((note, nIdx) => {
-        let targetX = 500 + (note.time * 580); // X 軸基準時間
+        let targetX = 500 + (note.time * 580);
         let vDrop = 0;
         if (nIdx > 0) {
             const gap = note.time - (notes[nIdx-1].time + notes[nIdx-1].duration);
-            if (gap > 0.05) vDrop = Math.min(gap * 240, 160); // 休止符下墜
+            if (gap > 0.05) vDrop = Math.min(gap * 300, 220); // 下墜感隨重量增強
         }
         let targetY = lastY + 20 + (maxMidi - note.midi) * vScale + vDrop;
-        if (targetY <= lastY) targetY = lastY + 12;
+        if (targetY <= lastY) targetY = lastY + 15; // 陡峭一點
 
         steps.push({ 
             x: targetX, y: targetY, 
-            w: Math.max(60, note.duration * 480), 
+            w: Math.max(65, note.duration * 480), 
             h: 12, freq: 440 * Math.pow(2,(note.midi-69)/12), active: 0 
         });
         lastY = targetY;
     });
 
-    // 看板物理補救：解決漏球與突出
+    // 看板物理補救
     for (let i = 0; i < steps.length - 1; i++) {
         let curr = steps[i], next = steps[i+1];
         let currEnd = curr.x + curr.w;
-
-        // 補救 1：強制下一音板起點向前延伸，確保著陸區（兩半直徑重疊）
-        let safeLandingX = currEnd - (BALL_R * 2.5);
+        let safeLandingX = currEnd - (BALL_R * 3); // 加重球需要更長的著陸區
         if (next.x > safeLandingX) {
             let diff = next.x - safeLandingX;
             next.x = safeLandingX;
             next.w += diff;
         }
-
-        // 補救 2：看板突出化 (右側長於前板 3 個直徑)
         let minRight = currEnd + EXTENSION;
         if ((next.x + next.w) < minRight) next.w = minRight - next.x;
-
-        // 補救 3：消除 X 軸大間隙
         let gap = next.x - currEnd;
-        if (gap > DIA) curr.w += (gap - 5);
+        if (gap > DIA) curr.w += (gap - 2);
     }
 
     tracks.push({
         steps,
-        ball: { x: steps[0].x, y: steps[0].y - 120, vx: BALL_VX, vy: 0, r: BALL_R },
+        ball: { x: steps[0].x, y: steps[0].y - 150, vx: BALL_VX, vy: 0, r: BALL_R },
         currentIdx: 0
     });
 }
 
-// --- 3. 渲染與更新循環 ---
 function startRolling() {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if (audioCtx.state === 'suspended') audioCtx.resume();
     isRunning = true;
     document.getElementById('playBtn').style.display = 'none';
     document.getElementById('recordBtn').style.display = "inline-block";
@@ -178,25 +165,25 @@ function startRecording() {
     recorder.ondataavailable = e => chunks.push(e.data);
     recorder.onstop = () => {
         const blob = new Blob(chunks, { type: 'video/mp4' });
-        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'mario_performance.mp4'; a.click();
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'heavy_xylophone.mp4'; a.click();
     };
     recorder.start();
-    // 重置球位置重新錄製
     const t = tracks[0];
-    t.currentIdx = 0; t.ball.x = t.steps[0].x; t.ball.y = t.steps[0].y - 120; t.ball.vy = 0;
+    t.currentIdx = 0; t.ball.x = t.steps[0].x; t.ball.y = t.steps[0].y - 150; t.ball.vy = 0;
     isRunning = true;
 }
 
 function update() {
     if (!isRunning || !tracks[0]) return;
     const t = tracks[0], b = t.ball;
-    b.vy += 0.45; b.x += b.vx; b.y += b.vy;
+    b.vy += GRAVITY; // 套用加重後的重力
+    b.x += b.vx; b.y += b.vy;
 
     let target = t.steps[t.currentIdx];
     if (target) {
-        // 精確碰撞偵測
+        // 因球速變快，碰撞區域垂直容錯增加到 15px
         const inX = b.x > target.x - 2 && b.x < target.x + target.w + 2;
-        const inY = b.y + b.r >= target.y - 5 && b.y + b.r <= target.y + 10;
+        const inY = b.y + b.r >= target.y - 8 && b.y + b.r <= target.y + 15;
         
         if (inX && inY && b.vy >= 0) {
             b.y = target.y - b.r; b.vy = 0;
@@ -204,7 +191,7 @@ function update() {
                 const o = audioCtx.createOscillator();
                 const g = audioCtx.createGain();
                 o.type = 'triangle'; o.frequency.value = target.freq;
-                g.gain.setTargetAtTime(0.1, audioCtx.currentTime, 0.01);
+                g.gain.setTargetAtTime(0.12, audioCtx.currentTime, 0.01); // 聲音也稍微加重
                 g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
                 o.connect(g); g.connect(audioCtx.destination);
                 o.start(); o.stop(audioCtx.currentTime + 0.4);
@@ -214,8 +201,8 @@ function update() {
         if (b.x > target.x + target.w) t.currentIdx++;
     }
 
-    camX += (b.x - canvas.width/2 - camX) * 0.1;
-    camY += (b.y - canvas.height/2 - camY) * 0.1;
+    camX += (b.x - canvas.width/2 - camX) * 0.12;
+    camY += (b.y - canvas.height/2 - camY) * 0.12;
     if (t.currentIdx >= t.steps.length) {
         isRunning = false;
         if (recorder?.state === "recording") recorder.stop();
@@ -236,8 +223,10 @@ function draw() {
             ctx.fillStyle = s.active > 0 ? "#fff" : "#fb718588";
             ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, s.h, 4); ctx.fill();
         });
-        ctx.fillStyle = "#f43f5e";
+        // 球的視覺處理：深紅色表現重量
+        ctx.fillStyle = "#e11d48";
         ctx.beginPath(); ctx.arc(tracks[0].ball.x, tracks[0].ball.y, BALL_R, 0, Math.PI*2); ctx.fill();
+        ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.stroke();
         
         const last = tracks[0].steps[tracks[0].steps.length - 1];
         if (tracks[0].currentIdx >= tracks[0].steps.length) {
