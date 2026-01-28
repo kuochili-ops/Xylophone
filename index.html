@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴工坊 - 極致慢速版</title>
+    <title>AI 木琴工坊 - 長音板慢速版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --panel: rgba(15, 23, 42, 0.98); }
@@ -27,10 +27,10 @@
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="margin:0;">🕯️ 極致慢速展演</h2>
+        <h2 style="margin:0;">🎹 長音板慢速展演</h2>
         <div class="section-title">1. MIDI 軌道 (點擊試聽)</div>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleMidiUpload(this)">
-        <div id="trackContainer" class="track-list">載入中...</div>
+        <div id="trackContainer" class="track-list">準備中...</div>
         <div class="section-title">2. 照片廊道 (多選)</div>
         <input type="file" id="galleryFiles" multiple accept="image/*">
         <div class="section-title">3. 結束留言</div>
@@ -47,9 +47,8 @@
 <canvas id="stage"></canvas>
 
 <script>
-// 物理參數再度乘以 0.8 (累計 VX 2.70, TS 166)
 const CONFIG = { 
-    GRAVITY: 0.6,        // 極低重力以配合極慢速
+    GRAVITY: 0.6,
     BALL_VX: 2.70,       
     BOUNCE_UP: -0.45, 
     STEP_Y_GAP: 15, 
@@ -168,13 +167,24 @@ function buildSteps(track) {
     notes.forEach((n, i) => {
         let x = n.time * CONFIG.TIME_SCALE;
         let w = n.duration * CONFIG.TIME_SCALE;
+        
+        // 恢復上一版本的計算方式：將間隙合併到音板長度中
         if (i < notes.length - 1) {
             let nextX = notes[i+1].time * CONFIG.TIME_SCALE;
             let gap = nextX - (x + w);
             if (gap > 0) w += gap; 
         }
+        
         currentY += CONFIG.STEP_Y_GAP;
-        steps.push({ x, y: currentY, w: Math.max(w, 40), freq: 440*Math.pow(2,(n.midi-69)/12), color: `hsla(${(n.midi*15)%360}, 75%, 60%, 0.8)`, active: 0, flash: 0 });
+        steps.push({ 
+            x, 
+            y: currentY, 
+            w: Math.max(w, 40), 
+            freq: 440*Math.pow(2,(n.midi-69)/12), 
+            color: `hsla(${(n.midi*15)%360}, 75%, 60%, 0.8)`, 
+            active: 0, 
+            flash: 0 
+        });
     });
     tracks = [{ steps, ball: { x: steps[0].x, y: steps[0].y - 30, vx: CONFIG.BALL_VX, vy: 0 }, cur: 0 }];
 }
@@ -192,7 +202,7 @@ function startRecording() {
     recorder.onstop = () => {
         const blob = new Blob(chunks, { type: 'video/webm' });
         const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-        a.download = `serene_show_${Date.now()}.webm`; a.click();
+        a.download = `show_${Date.now()}.webm`; a.click();
         setTimeout(() => location.reload(), 1000);
     };
     recorder.start(100);
