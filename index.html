@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>木琴工坊 - Track Optimized</title>
+    <title>木琴工坊 - Starry Hawaii</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --success: #10b981; }
@@ -23,19 +23,27 @@
         input[type="file"], input[type="text"] { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #334155; background: #0f172a; color: #fff; margin-bottom: 10px; box-sizing: border-box; }
         .primary-btn { width: 100%; padding: 18px; border-radius: 15px; background: var(--accent); color: white; border: none; font-size: 16px; font-weight: bold; cursor: pointer; }
         .primary-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        label { display: block; font-size: 12px; color: #94a3b8; margin: 10px 0 5px 5px; }
     </style>
 </head>
 <body>
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="text-align:center; margin: 0 0 20px 0;">🎹 軌道自動校正版</h2>
+        <h2 style="text-align:center; margin: 0 0 20px 0;">🎹 粒子星空演奏模式</h2>
+        
+        <label>1. 選擇音軌 (已自動載入 Hawaii.mid)</label>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleManualMidi(this)">
-        <div id="trackContainer" class="track-list">請上傳 MIDI 檔案...</div>
+        <div id="trackContainer" class="track-list">讀取預設 MIDI 中...</div>
+
+        <label>2. 上傳廊道相片</label>
         <input type="file" id="galleryFiles" multiple accept="image/*" onchange="previewImages(this)">
         <div id="photoPreview"></div>
-        <input type="text" id="msgInit" value="Perfect Harmony!">
-        <button id="entryBtn" class="primary-btn" onclick="enterScene()" disabled>開始演奏</button>
+
+        <label>3. 結尾訊息</label>
+        <input type="text" id="msgInit" value="Fantastic Harmony!">
+
+        <button id="entryBtn" class="primary-btn" onclick="enterScene()" disabled>確認並開始</button>
     </div>
 </div>
 
@@ -55,32 +63,55 @@ let isFinishing = false, isRecording = false, currentMsg = "";
 let lastTime = 0, isInitialSlide = true;
 
 const cornerImg = new Image(); cornerImg.src = 'IMG_6604.png';
-const GRAVITY = 3500, BALL_VX = 360, BOUNCE_UP = -30, BALL_R = 12;
+const GRAVITY = 3800, BALL_VX = 380, BOUNCE_UP = -20, BALL_R = 12; // 低彈跳參數
 const NOTE_COLORS = ["#FF5252", "#FF4081", "#E040FB", "#7C4DFF", "#536DFE", "#448AFF", "#40C4FF", "#18FFFF", "#64FFDA", "#69F0AE", "#B2FF59", "#EEFF41"];
 
 canvas.width = window.innerWidth; canvas.height = window.innerHeight;
 
+// 視差粒子初始化
 function initStars() {
     stars = [];
-    for(let i=0; i<150; i++) {
-        stars.push({ x: Math.random() * canvas.width, y: Math.random() * canvas.height, size: Math.random() * 2, opacity: Math.random(), parallax: 0.1 + Math.random() * 0.3 });
+    for(let i=0; i<180; i++) {
+        stars.push({
+            x: Math.random() * canvas.width,
+            y: Math.random() * canvas.height,
+            size: Math.random() * 1.8,
+            opacity: Math.random(),
+            parallax: 0.05 + Math.random() * 0.25
+        });
     }
 }
 
-function handleManualMidi(input) { if(input.files[0]) input.files[0].arrayBuffer().then(processMidiBuffer); }
+// 載入預設或手動 MIDI
+window.addEventListener('load', async () => {
+    initStars();
+    try {
+        const res = await fetch('Hawaii.mid'); // 嘗試載入預設文件
+        if (res.ok) processMidiBuffer(await res.arrayBuffer());
+        else document.getElementById('trackContainer').innerText = "預設 MIDI 載入失敗，請手動上傳";
+    } catch (e) { document.getElementById('trackContainer').innerText = "請手動上傳 MIDI 檔案"; }
+});
+
+function handleManualMidi(input) {
+    if(!input.files[0]) return;
+    input.files[0].arrayBuffer().then(processMidiBuffer);
+}
 
 function processMidiBuffer(buf) {
     const fullMidi = new Midi(buf);
-    const container = document.getElementById('trackContainer'); container.innerHTML = "";
+    const container = document.getElementById('trackContainer');
+    container.innerHTML = "";
     fullMidi.tracks.forEach((t, i) => {
         if(t.notes.length === 0) return;
         const item = document.createElement('div');
-        item.className = "track-item"; item.id = `track-${i}`;
-        item.innerHTML = `Track ${i+1} (${t.notes.length} 音符)`;
+        item.className = "track-item";
+        item.id = `track-${i}`;
+        item.innerHTML = `<div><strong>Track ${i+1}</strong> (${t.notes.length} 音符)</div>`;
         item.onclick = () => {
             selectedTrackData = t;
             document.querySelectorAll('.track-item').forEach(el => el.classList.remove('active'));
-            item.classList.add('active'); document.getElementById('entryBtn').disabled = false;
+            item.classList.add('active');
+            document.getElementById('entryBtn').disabled = false;
         };
         container.appendChild(item);
     });
@@ -96,7 +127,7 @@ function previewImages(input) {
 }
 
 async function enterScene() {
-    if(!audioCtx) audioCtx = new AudioContext();
+    if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     currentMsg = document.getElementById('msgInit').value;
     buildSteps(selectedTrackData);
     const gFiles = document.getElementById('galleryFiles').files;
@@ -110,31 +141,25 @@ async function enterScene() {
     document.getElementById('setupPanel').style.display = 'none';
     document.getElementById('recordUI').style.display = 'flex';
     audioDest = audioCtx.createMediaStreamDestination();
-    initStars(); isRunning = true; lastTime = performance.now();
+    isRunning = true; lastTime = performance.now();
     requestAnimationFrame(loop);
 }
 
 function buildSteps(track) {
     let rawNotes = track.notes.sort((a,b) => a.time - b.time);
     let steps = [], startY = canvas.height * 0.5;
-    
     rawNotes.forEach((n, i) => {
         let x = n.time * BALL_VX;
-        let y = startY + (i * 18); // 穩定的梯狀下墜
+        let y = startY + (i * 18);
         let w = Math.max(n.duration * BALL_VX, 40);
-
-        // 💡 優化 1：自動接續縫隙，防止球掉下去
+        // 軌道優化：自動接續縫隙
         if (i > 0) {
             let prev = steps[i-1];
             let gap = x - (prev.x + prev.w);
             if (gap > 0) prev.w += gap + 2; 
         }
-
-        // 💡 優化 2：處理和弦重疊，微調 X 軸讓敲擊更有層次
-        if (i > 0 && Math.abs(x - steps[i-1].x) < 5) {
-            x += 15; // 稍微錯開重疊音
-        }
-
+        // 處理和弦
+        if (i > 0 && Math.abs(x - steps[i-1].x) < 5) x += 15;
         steps.push({ x, y, w, freq: 440*Math.pow(2,(n.midi-69)/12), color: NOTE_COLORS[n.midi % 12], active: 0 });
     });
     tracks = [{ steps, ball: { x: steps[0].x - 450, y: steps[0].y - BALL_R, vx: BALL_VX, vy: 0 }, cur: 0 }];
@@ -182,11 +207,12 @@ function hitStep(s) {
 function draw() {
     ctx.fillStyle = "#020617"; ctx.fillRect(0, 0, canvas.width, canvas.height);
     
-    // 背景粒子
+    // 繪製背景星空 (視差)
     stars.forEach(s => {
         let x = (s.x - camX * s.parallax) % canvas.width; if (x < 0) x += canvas.width;
         let y = (s.y - camY * s.parallax) % canvas.height; if (y < 0) y += canvas.height;
-        ctx.fillStyle = `rgba(255,255,255,${s.opacity})`; ctx.beginPath(); ctx.arc(x, y, s.size, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = `rgba(255, 255, 255, ${s.opacity})`;
+        ctx.beginPath(); ctx.arc(x, y, s.size, 0, Math.PI*2); ctx.fill();
     });
 
     ctx.save();
@@ -244,7 +270,7 @@ function triggerEndSequence() {
 function saveVideo() {
     const blob = new Blob(chunks, { type: 'video/mp4' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = `optimized_rolling_${Date.now()}.mp4`; a.click();
+    a.download = `hawaii_rolling_${Date.now()}.mp4`; a.click();
     setTimeout(() => location.reload(), 2000);
 }
 </script>
