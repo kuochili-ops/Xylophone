@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴工坊 - 固定板長無縫版</title>
+    <title>AI 木琴工坊 - 階梯式無縫版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --panel: rgba(15, 23, 42, 0.98); }
@@ -26,14 +26,14 @@
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="margin:0;">📏 固定板長無縫版</h2>
+        <h2 style="margin:0;">🪜 階梯式無縫版</h2>
         <div class="section-title">1. MIDI 軌道 (預設已載入)</div>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleMidiUpload(this)">
         <div id="trackContainer" class="track-list">讀取中...</div>
         <div class="section-title">2. 照片廊道 (多選)</div>
         <input type="file" id="galleryFiles" multiple accept="image/*">
         <div class="section-title">3. 結束留言</div>
-        <input type="text" id="msgInit" value="Back to Fixed Length. 終">
+        <input type="text" id="msgInit" value="Stepped & Seamless. 終">
         <button id="entryBtn" class="btn" onclick="enterScene()" disabled>確認並進入</button>
     </div>
 </div>
@@ -46,16 +46,15 @@
 <canvas id="stage"></canvas>
 
 <script>
-// 速度維持 0.5X (相較於 180 為 90)
-const TIME_SCALE = 90; 
+const TIME_SCALE = 90; // 維持 0.5x 慢速
 const CONFIG = { 
-    GRAVITY: 0.25, 
+    GRAVITY: 0.3, 
     BALL_VX: TIME_SCALE / 60, 
-    BOUNCE_UP: -0.32, 
-    STEP_Y_GAP: 4, 
+    BOUNCE_UP: -0.35, 
+    STEP_Y_GAP: 25,          // 增加垂直階差，讓「下樓梯」感明顯
     TIME_SCALE: TIME_SCALE,     
     BALL_R: 10,
-    FIXED_STEP_W: 80         // 回到原來的板長 80
+    FIXED_STEP_W: 80         // 固定板長
 };
 
 const canvas = document.getElementById('stage');
@@ -92,7 +91,7 @@ window.addEventListener('load', async () => {
 
 function loadDefaultMelody() {
     const container = document.getElementById('trackContainer');
-    container.innerHTML = `<div class="track-item active" id="defaultTrack"><span>慢速固定板長版</span></div>`;
+    container.innerHTML = `<div class="track-item active" id="defaultTrack"><span>慢速階梯無縫版</span></div>`;
     selectedTrackIdx = 999;
     document.getElementById('entryBtn').disabled = false;
     document.getElementById('defaultTrack').onclick = () => {
@@ -164,7 +163,7 @@ async function enterScene() {
         const img = new Image(); img.src = URL.createObjectURL(gFiles[i]);
         await new Promise(r => img.onload = r);
         const targetIdx = Math.floor((i / gFiles.length) * (steps.length - 1));
-        gallery.push({ img, x: steps[targetIdx].x + 80, y: steps[targetIdx].y - 280, w: 260 });
+        gallery.push({ img, x: steps[targetIdx].x + 50, y: steps[targetIdx].y - 320, w: 260 });
     }
     document.getElementById('setupPanel').style.display = 'none';
     document.getElementById('recordUI').style.display = 'flex';
@@ -172,16 +171,31 @@ async function enterScene() {
 }
 
 function buildSteps(track) {
-    let steps = [], currentY = 400;
+    let steps = [], currentY = 300;
     const notes = [...track.notes].sort((a,b) => a.time - b.time);
     
     notes.forEach((n, i) => {
         let x = n.time * CONFIG.TIME_SCALE;
-        // 雖然寬度固定，但因為 X 是依照 MIDI 定義，所以頭尾接的特性會由碰撞邏輯處理
-        let w = CONFIG.FIXED_STEP_W; 
+        let w = CONFIG.FIXED_STEP_W;
         
+        // 頭尾接：確保下一塊板子的 X 剛好接在這一塊之後
+        if (i < notes.length - 1) {
+            let nextX = notes[i+1].time * CONFIG.TIME_SCALE;
+            w = nextX - x;
+        }
+
+        steps.push({ 
+            x, 
+            y: currentY, 
+            w: Math.max(w, 10), // 確保極短音符也有板子
+            freq: 440*Math.pow(2,(n.midi-69)/12), 
+            color: `hsla(${(n.midi*15)%360}, 75%, 60%, 0.8)`, 
+            active: 0, 
+            flash: 0 
+        });
+        
+        // 每一階高度遞增
         currentY += CONFIG.STEP_Y_GAP;
-        steps.push({ x, y: currentY, w: w, freq: 440*Math.pow(2,(n.midi-69)/12), color: `hsla(${(n.midi*15)%360}, 75%, 60%, 0.8)`, active: 0, flash: 0 });
     });
     tracks = [{ steps, ball: { x: steps[0].x, y: steps[0].y - 30, vx: CONFIG.BALL_VX, vy: 0 }, cur: 0 }];
 }
@@ -199,7 +213,7 @@ function startRecording() {
     recorder.onstop = () => {
         const blob = new Blob(chunks, { type: 'video/webm' });
         const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-        a.download = `fixed_seamless_${Date.now()}.webm`; a.click();
+        a.download = `stepped_show_${Date.now()}.webm`; a.click();
         setTimeout(() => location.reload(), 1000);
     };
     recorder.start(100);
@@ -214,8 +228,8 @@ function update() {
     if (t.cur >= t.steps.length) { triggerFinish(); return; }
     
     t.steps.forEach((s, idx) => {
-        // 碰撞邏輯維持「接續」特性：一旦球到達下一個音符的 X 座標，就強制偵測
-        if (b.x >= s.x && b.x < s.x + s.w && b.y + CONFIG.BALL_R >= s.y && b.y < s.y + 15 && b.vy >= 0) {
+        // 碰撞偵測：針對每一階的高度進行精準判斷
+        if (b.x >= s.x && b.x < s.x + s.w && b.y + CONFIG.BALL_R >= s.y && b.y < s.y + 20 && b.vy >= 0) {
             b.y = s.y - CONFIG.BALL_R; b.vy = CONFIG.BOUNCE_UP;
             if (!s.active) {
                 const osc = audioCtx.createOscillator();
@@ -223,7 +237,7 @@ function update() {
                 osc.type = 'triangle'; 
                 osc.frequency.setValueAtTime(s.freq, audioCtx.currentTime);
                 g.gain.setTargetAtTime(0.3, audioCtx.currentTime, 0.01);
-                g.gain.setTargetAtTime(0, audioCtx.currentTime + 0.15, 0.2);
+                g.gain.setTargetAtTime(0, audioCtx.currentTime + 0.15, 0.25);
                 osc.connect(g); g.connect(audioCtx.destination); g.connect(audioDest);
                 osc.start(); osc.stop(audioCtx.currentTime + 1.0);
                 s.active = 1; s.flash = 1.0;
@@ -231,6 +245,7 @@ function update() {
             }
         }
     });
+    // 鏡頭平滑跟隨
     camX += (b.x - canvas.width/2 - camX) * 0.1; camY += (b.y - canvas.height/2 - camY) * 0.1;
 }
 
@@ -243,6 +258,8 @@ function draw() {
         tracks[0].steps.forEach(s => {
             if (s.x > camX - 200 && s.x < camX + canvas.width + 400) {
                 ctx.fillStyle = s.color; ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, 12, 6); ctx.fill();
+                // 側面陰影讓階梯感更強
+                ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.fillRect(s.x, s.y + 12, s.w, 4);
                 if(s.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${s.flash})`; ctx.fill(); s.flash *= 0.9; }
             }
         });
@@ -253,7 +270,7 @@ function draw() {
     ctx.restore();
     if (isFinishing) {
         finishAlpha = Math.min(finishAlpha + 0.015, 1);
-        ctx.fillStyle = `rgba(0,0,0,${finishAlpha * 0.9})`; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = `rgba(0,0,0,${finishAlpha * 0.95})`; ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.save(); ctx.globalAlpha = finishAlpha; ctx.fillStyle = "white"; ctx.font = "bold 50px sans-serif"; ctx.textAlign = "center";
         ctx.fillText(currentMsg, canvas.width/2, canvas.height/2);
         if (cornerImg.complete) ctx.drawImage(cornerImg, canvas.width/2 - 100, canvas.height/2 + 70, 200, 200);
