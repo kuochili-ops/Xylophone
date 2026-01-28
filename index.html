@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴工坊 - 寬板慢速版</title>
+    <title>AI 木琴工坊 - 終極慢節奏版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --panel: rgba(15, 23, 42, 0.98); }
@@ -26,14 +26,14 @@
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="margin:0;">🎹 寬板慢速 (X 2)</h2>
+        <h2 style="margin:0;">🧘 終極慢節奏 (Ultra Slow)</h2>
         <div class="section-title">1. MIDI 軌道 (預設已載入)</div>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleMidiUpload(this)">
         <div id="trackContainer" class="track-list">讀取中...</div>
         <div class="section-title">2. 照片廊道 (多選)</div>
         <input type="file" id="galleryFiles" multiple accept="image/*">
         <div class="section-title">3. 結束留言</div>
-        <input type="text" id="msgInit" value="Wide & Slow. 終">
+        <input type="text" id="msgInit" value="Ultimate Peace. 終">
         <button id="entryBtn" class="btn" onclick="enterScene()" disabled>確認並進入</button>
     </div>
 </div>
@@ -46,16 +46,16 @@
 <canvas id="stage"></canvas>
 
 <script>
-// 板長加倍，時間軸同步撐開
-const TIME_SCALE = 120; 
+// 物理參數重新校準：極慢動作
+const TIME_SCALE = 240; // 撐開時間軸 (4倍速緩慢感)
 const CONFIG = { 
-    GRAVITY: 0.15,           // 維持超低重力
-    BALL_VX: 2.0,            // 配合 TIME_SCALE 調整速度 (2px/frame)
-    BOUNCE_UP: -0.28,        
-    STEP_Y_GAP: 6,           // 略微增加階差以配合長板視覺
+    GRAVITY: 0.08,           // 極低重力
+    BALL_VX: 1.5,            // 緩慢橫移速度 (配合 60fps)
+    BOUNCE_UP: -0.25,        // 輕柔彈起
+    STEP_Y_GAP: 3,           // 極小階差，穩定不漏敲
     TIME_SCALE: TIME_SCALE,     
     BALL_R: 10,
-    FIXED_STEP_W: 160        // 板長加倍 (原本 80 -> 160)
+    FIXED_STEP_W: 160        
 };
 
 const canvas = document.getElementById('stage');
@@ -69,10 +69,10 @@ const cornerImg = new Image(); cornerImg.src = 'IMG_6604.png';
 canvas.width = window.innerWidth; canvas.height = window.innerHeight;
 
 const DEFAULT_MIDI_DATA = [
-    { time: 0, midi: 76, duration: 0.1 }, { time: 0.2, midi: 76, duration: 0.1 },
-    { time: 0.4, midi: 76, duration: 0.1 }, { time: 0.6, midi: 72, duration: 0.1 },
-    { time: 0.7, midi: 76, duration: 0.1 }, { time: 0.9, midi: 79, duration: 0.2 },
-    { time: 1.3, midi: 67, duration: 0.2 }
+    { time: 0, midi: 76 }, { time: 0.5, midi: 76 },
+    { time: 1.0, midi: 76 }, { time: 1.5, midi: 72 },
+    { time: 1.75, midi: 76 }, { time: 2.25, midi: 79 },
+    { time: 3.0, midi: 67 }
 ];
 
 async function ensureAudioStarted() {
@@ -92,7 +92,7 @@ window.addEventListener('load', async () => {
 
 function loadDefaultMelody() {
     const container = document.getElementById('trackContainer');
-    container.innerHTML = `<div class="track-item active" id="defaultTrack"><span>寬板預設旋律</span></div>`;
+    container.innerHTML = `<div class="track-item active" id="defaultTrack"><span>極慢旋律</span></div>`;
     selectedTrackIdx = 999;
     document.getElementById('entryBtn').disabled = false;
     document.getElementById('defaultTrack').onclick = () => {
@@ -129,15 +129,15 @@ function stopAllPreviews() {
 
 function previewTrack(track) {
     const now = audioCtx.currentTime;
-    track.notes.slice(0, 20).forEach(n => {
+    track.notes.slice(0, 10).forEach(n => {
         const osc = audioCtx.createOscillator();
         const g = audioCtx.createGain();
         osc.frequency.setValueAtTime(440 * Math.pow(2, (n.midi - 69) / 12), now + n.time);
         g.gain.setValueAtTime(0, now + n.time);
-        g.gain.linearRampToValueAtTime(0.2, now + n.time + 0.02);
-        g.gain.exponentialRampToValueAtTime(0.001, now + n.time + 0.3);
+        g.gain.linearRampToValueAtTime(0.2, now + n.time + 0.05);
+        g.gain.exponentialRampToValueAtTime(0.001, now + n.time + 0.5);
         osc.connect(g); g.connect(audioCtx.destination);
-        osc.start(now + n.time); osc.stop(now + n.time + 0.4);
+        osc.start(now + n.time); osc.stop(now + n.time + 0.6);
         activePreviewOscillators.push({ osc, g });
     });
 }
@@ -149,7 +149,7 @@ function drawFramedImage(item) {
     if(!img.complete) return;
     const h = w * (img.height / img.width);
     const border = 14;
-    ctx.fillStyle = "#451a03"; ctx.fillRect(x - border, y - border, w + border * 2, h + border * 2);
+    ctx.fillStyle = "#1e293b"; ctx.fillRect(x - border, y - border, w + border * 2, h + border * 2);
     ctx.drawImage(img, x, y, w, h);
 }
 
@@ -164,7 +164,7 @@ async function enterScene() {
         const img = new Image(); img.src = URL.createObjectURL(gFiles[i]);
         await new Promise(r => img.onload = r);
         const targetIdx = Math.floor((i / gFiles.length) * (steps.length - 1));
-        gallery.push({ img, x: steps[targetIdx].x + 100, y: steps[targetIdx].y - 350, w: 320 });
+        gallery.push({ img, x: steps[targetIdx].x + 100, y: steps[targetIdx].y - 300, w: 280 });
     }
     document.getElementById('setupPanel').style.display = 'none';
     document.getElementById('recordUI').style.display = 'flex';
@@ -179,21 +179,20 @@ function buildSteps(track) {
         let x = n.time * CONFIG.TIME_SCALE;
         let w = CONFIG.FIXED_STEP_W;
         
-        // 無縫銜接：確保長度剛好蓋到下一塊
         if (i < notes.length - 1) {
             let nextX = notes[i+1].time * CONFIG.TIME_SCALE;
-            w = Math.max(CONFIG.FIXED_STEP_W, nextX - x); 
+            w = Math.max(CONFIG.FIXED_STEP_W, nextX - x); // 確保無縫
         }
 
         steps.push({ 
             x, y: currentY, w, 
             freq: 440*Math.pow(2,(n.midi-69)/12), 
-            color: `hsla(${(n.midi*15)%360}, 70%, 55%, 0.8)`, 
+            color: `hsla(${(n.midi*15)%360}, 65%, 50%, 0.8)`, 
             active: 0, flash: 0 
         });
         currentY += CONFIG.STEP_Y_GAP;
     });
-    tracks = [{ steps, ball: { x: steps[0].x, y: steps[0].y - 30, vx: CONFIG.BALL_VX, vy: 0 }, cur: 0 }];
+    tracks = [{ steps, ball: { x: steps[0].x, y: steps[0].y - 40, vx: CONFIG.BALL_VX, vy: 0 }, cur: 0 }];
 }
 
 async function togglePlay() { await ensureAudioStarted(); isBallMoving = !isBallMoving; }
@@ -209,7 +208,7 @@ function startRecording() {
     recorder.onstop = () => {
         const blob = new Blob(chunks, { type: 'video/webm' });
         const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-        a.download = `wide_slow_${Date.now()}.webm`; a.click();
+        a.download = `ultimate_slow_${Date.now()}.webm`; a.click();
         setTimeout(() => location.reload(), 1000);
     };
     recorder.start(100);
@@ -224,50 +223,51 @@ function update() {
     if (t.cur >= t.steps.length) { triggerFinish(); return; }
     
     t.steps.forEach((s, idx) => {
-        if (b.x >= s.x && b.x < s.x + s.w && b.y + CONFIG.BALL_R >= s.y && b.y < s.y + 15 && b.vy >= 0) {
+        if (b.x >= s.x && b.x < s.x + s.w && b.y + CONFIG.BALL_R >= s.y && b.y < s.y + 12 && b.vy >= 0) {
             b.y = s.y - CONFIG.BALL_R; b.vy = CONFIG.BOUNCE_UP;
             if (!s.active) {
                 const osc = audioCtx.createOscillator();
                 const g = audioCtx.createGain();
                 osc.type = 'sine';
                 osc.frequency.setValueAtTime(s.freq, audioCtx.currentTime);
-                g.gain.setTargetAtTime(0.3, audioCtx.currentTime, 0.01);
-                g.gain.setTargetAtTime(0, audioCtx.currentTime + 0.3, 0.4); 
+                g.gain.setTargetAtTime(0.4, audioCtx.currentTime, 0.01);
+                g.gain.setTargetAtTime(0, audioCtx.currentTime + 0.4, 0.6); 
                 osc.connect(g); g.connect(audioCtx.destination); g.connect(audioDest);
-                osc.start(); osc.stop(audioCtx.currentTime + 1.5);
+                osc.start(); osc.stop(audioCtx.currentTime + 2.0);
                 s.active = 1; s.flash = 1.0;
                 t.cur = idx + 1;
             }
         }
     });
-    camX += (b.x - canvas.width/2 - camX) * 0.1; camY += (b.y - canvas.height/2 - camY) * 0.1;
+    // 鏡頭極致平滑跟隨
+    camX += (b.x - canvas.width/2 - camX) * 0.05; camY += (b.y - canvas.height/2 - camY) * 0.05;
 }
 
 function draw() {
     ctx.fillStyle = "#020617"; ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.save();
     ctx.translate(-Math.round(camX), -Math.round(camY));
-    gallery.forEach(item => { if (item.x > camX - 400 && item.x < camX + canvas.width + 500) drawFramedImage(item); });
+    gallery.forEach(item => { if (item.x > camX - 500 && item.x < camX + canvas.width + 500) drawFramedImage(item); });
     if (tracks[0]) {
         tracks[0].steps.forEach(s => {
-            if (s.x > camX - 400 && s.x < camX + canvas.width + 600) {
+            if (s.x > camX - 400 && s.x < camX + canvas.width + 800) {
                 ctx.fillStyle = s.color; ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, 14, 7); ctx.fill();
-                if(s.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${s.flash})`; ctx.fill(); s.flash *= 0.95; }
+                if(s.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${s.flash})`; ctx.fill(); s.flash *= 0.96; }
             }
         });
         if (!isFinishing && isBallMoving) {
-            const b = tracks[0].ball; ctx.fillStyle = "#f43f5e"; ctx.beginPath(); ctx.arc(b.x, b.y, CONFIG.BALL_R, 0, Math.PI*2); ctx.fill();
+            const b = tracks[0].ball; ctx.fillStyle = "#fb7185"; ctx.beginPath(); ctx.arc(b.x, b.y, CONFIG.BALL_R, 0, Math.PI*2); ctx.fill();
         }
     }
     ctx.restore();
     if (isFinishing) {
-        finishAlpha = Math.min(finishAlpha + 0.015, 1);
-        ctx.fillStyle = `rgba(0,0,0,${finishAlpha * 0.95})`; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        finishAlpha = Math.min(finishAlpha + 0.01, 1);
+        ctx.fillStyle = `rgba(0,0,0,${finishAlpha * 0.98})`; ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.save(); ctx.globalAlpha = finishAlpha; ctx.fillStyle = "white"; ctx.font = "bold 50px sans-serif"; ctx.textAlign = "center";
         ctx.fillText(currentMsg, canvas.width/2, canvas.height/2);
-        if (cornerImg.complete) ctx.drawImage(cornerImg, canvas.width/2 - 100, canvas.height/2 + 70, 200, 200);
+        if (cornerImg.complete) ctx.drawImage(cornerImg, canvas.width/2 - 100, canvas.height/2 + 80, 200, 200);
         ctx.restore();
-        if (isRecording && finishAlpha >= 1) { saveCounter++; if (saveCounter > 180) { isRecording = false; recorder.stop(); } }
+        if (isRecording && finishAlpha >= 1) { saveCounter++; if (saveCounter > 120) { isRecording = false; recorder.stop(); } }
     }
     update(); requestAnimationFrame(draw);
 }
