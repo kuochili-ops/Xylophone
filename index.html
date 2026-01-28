@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>木琴工坊 - 完美錄製版</title>
+    <title>木琴工坊 - 錄製生命週期強化</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --success: #10b981; }
@@ -30,9 +30,9 @@
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="text-align:center; margin: 0 0 20px 0;">🎬 完美 Ending 版</h2>
+        <h2 style="text-align:center; margin: 0 0 20px 0;">🎬 Ending 生命週期優化</h2>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleManualMidi(this)">
-        <div id="trackContainer" class="track-list">讀取 MIDI 中...</div>
+        <div id="trackContainer" class="track-list">讀取預設曲目...</div>
         <input type="file" id="galleryFiles" multiple accept="image/*" onchange="previewImages(this)">
         <div id="photoPreview"></div>
         <input type="text" id="msgInit" value="Fantastic Harmony!">
@@ -55,7 +55,10 @@ let camX = 0, camY = 0, recorder, chunks = [], audioDest, selectedTrackData = nu
 let isFinishing = false, isRecording = false, currentMsg = "";
 let lastTime = 0, isInitialSlide = true;
 
-const cornerImg = new Image(); cornerImg.src = 'IMG_6604.png';
+// 預設簽名檔
+const cornerImg = new Image(); 
+cornerImg.src = 'IMG_6604.png'; 
+
 const GRAVITY = 3600, BALL_VX = 400, BOUNCE_UP = -40, BALL_R = 12;
 const NOTE_COLORS = ["#FF5252", "#FF4081", "#E040FB", "#7C4DFF", "#536DFE", "#448AFF", "#40C4FF", "#18FFFF", "#64FFDA", "#69F0AE", "#B2FF59", "#EEFF41"];
 
@@ -135,7 +138,6 @@ function buildSteps(track) {
             let gap = x - (prev.x + prev.w);
             if (gap > 0) prev.w += gap + 3; 
         }
-        if (i > 0 && Math.abs(x - steps[i-1].x) < 5) x += 15;
         steps.push({ x, y, w, freq: 440*Math.pow(2,(n.midi-69)/12), color: NOTE_COLORS[n.midi % 12], active: 0 });
     });
     tracks = [{ steps, ball: { x: steps[0].x - 450, y: steps[0].y - BALL_R, vx: BALL_VX, vy: 0 }, cur: 0 }];
@@ -209,6 +211,8 @@ function draw() {
         }
     }
     ctx.restore();
+    
+    // 💡 Ending 畫面繪製：確保黑屏訊息能被錄製
     if (isFinishing) {
         ctx.fillStyle = "rgba(0,0,0,0.96)"; ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.fillStyle = "#fff"; ctx.font = "bold 36px sans-serif"; ctx.textAlign = "center";
@@ -232,7 +236,7 @@ function handleRecording() {
         document.getElementById('recBtn').innerText = "STOP";
         document.getElementById('recBtn').classList.add('is-recording');
     } else {
-        // 💡 修正：按下停止後不立刻結束，而是進入帶延遲的 Ending 流程
+        // 💡 關鍵優化：當按下 STOP，先不停止 Recorder，而是進入 Ending 流程
         triggerEndSequence();
     }
 }
@@ -242,20 +246,26 @@ function triggerEndSequence() {
     isFinishing = true;
     isBallMoving = false;
     
-    // 強制在畫面上停留 3.5 秒再切斷錄影，確保結尾被寫入檔案
-    setTimeout(() => {
-        if (recorder && recorder.state !== 'inactive') {
-            recorder.stop();
+    // 💡 保險機制：手動設定一個計數器，在 Ending 畫面渲染 180 幀後才切斷
+    let endingFrames = 0;
+    const forceRenderEnding = () => {
+        draw(); // 強制執行繪製
+        endingFrames++;
+        if (endingFrames < 180) { // 大約停留 3 秒
+            requestAnimationFrame(forceRenderEnding);
         } else {
-            location.reload();
+            if (recorder && recorder.state !== 'inactive') {
+                recorder.stop(); // 只有在這裡才真正停止錄影
+            }
         }
-    }, 3500); 
+    };
+    forceRenderEnding();
 }
 
 function saveVideo() {
     const blob = new Blob(chunks, { type: 'video/webm' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = `mario_full_ending_${Date.now()}.webm`; a.click();
+    a.download = `mario_pro_ending_${Date.now()}.webm`; a.click();
     setTimeout(() => location.reload(), 1500);
 }
 </script>
