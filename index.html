@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>木琴工坊 - Universal Stable</title>
+    <title>木琴工坊 - Parallel Strike</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --success: #10b981; }
@@ -18,7 +18,7 @@
         .photo-thumb { aspect-ratio: 1; background: #1e293b; border-radius: 6px; overflow: hidden; }
         .photo-thumb img { width: 100%; height: 100%; object-fit: cover; }
         .record-ui { position: fixed; bottom: 40px; left: 0; right: 0; z-index: 1000; display: none; justify-content: center; gap: 30px; }
-        .btn-main { width: 75px; height: 75px; border-radius: 50%; border: none; font-weight: bold; color: white; cursor: pointer; }
+        .btn-main { width: 75px; height: 75px; border-radius: 50%; border: none; font-weight: bold; color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; }
         #playBtn { background: var(--success); }
         #recBtn { background: #ef4444; border: 4px solid #fff; }
         input, .primary-btn { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #334155; background: #0f172a; color: #fff; margin-bottom: 10px; box-sizing: border-box; }
@@ -31,11 +31,16 @@
 <div id="setupPanel">
     <div class="config-card">
         <h2 style="text-align:center; margin:0 0 15px 0;">🎹 木琴工坊 Pro</h2>
+        <label style="font-size: 12px; color: #94a3b8;">1. MIDI 選擇 (預設已載入 Mario)</label>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleManualMidi(this)">
-        <div id="trackContainer" class="track-list">請上傳 MIDI 檔案...</div>
+        <div id="trackContainer" class="track-list">讀取預設 MIDI 中...</div>
+        
+        <label style="font-size: 12px; color: #94a3b8;">2. 上傳照片</label>
         <input type="file" id="galleryFiles" multiple accept="image/*" onchange="previewImages(this)">
         <div id="photoPreview"></div>
-        <input type="text" id="msgInit" value="Fantastic Music Video!">
+        
+        <label style="font-size: 12px; color: #94a3b8;">3. 結尾留言</label>
+        <input type="text" id="msgInit" value="Fantastic Harmony!">
         <button id="entryBtn" class="primary-btn" onclick="enterScene()" disabled>進入舞台</button>
     </div>
 </div>
@@ -62,6 +67,14 @@ const NOTE_COLORS = ["#FF5252", "#FF4081", "#E040FB", "#7C4DFF", "#536DFE", "#44
 
 canvas.width = window.innerWidth; canvas.height = window.innerHeight;
 
+// 載入預設 MIDI
+window.addEventListener('load', async () => {
+    try {
+        const res = await fetch('Mario Bros. - Super Mario Bros. Theme.mid');
+        if (res.ok) processMidiBuffer(await res.arrayBuffer());
+    } catch (e) { document.getElementById('trackContainer').innerText = "請手動上傳 MIDI 檔案"; }
+});
+
 function handleManualMidi(input) {
     if(!input.files[0]) return;
     input.files[0].arrayBuffer().then(processMidiBuffer);
@@ -76,7 +89,7 @@ function processMidiBuffer(buf) {
         const item = document.createElement('div');
         item.className = "track-item";
         item.id = `track-${i}`;
-        item.innerHTML = `<div><strong>Track ${i+1}</strong> (${t.notes.length} 音符)</div><button class="preview-btn" onclick="previewTrack(event, ${i})">▶️ 試聽</button>`;
+        item.innerHTML = `<div><strong>Track ${i+1}</strong> (${t.notes.length} notes)</div><button class="preview-btn" onclick="previewTrack(event, ${i})">▶️ 試聽</button>`;
         item.onclick = () => {
             selectedTrackData = t;
             document.querySelectorAll('.track-item').forEach(el => el.classList.remove('active'));
@@ -143,8 +156,15 @@ function buildSteps(track) {
         let x = n.time * BALL_VX;
         steps.push({ x, y: startY + (i * 20), w: Math.max(n.duration * BALL_VX, 60), freq: 440*Math.pow(2,(n.midi-69)/12), color: NOTE_COLORS[n.midi % 12], active: 0 });
     });
-    // 通用加固：球體初始位置直接鎖定第一個音符
-    tracks = [{ steps, ball: { x: steps[0].x - 350, y: steps[0].y - 450, vx: BALL_VX, vy: 0 }, cur: 0 }];
+    // 💡 關鍵優化：平行移動擊打第一個音
+    // 球的 Y 軸直接設為第一個階梯的高度 (s.y - BALL_R)，且 vy 設為 0 (不掉落，直接平行滑入)
+    const firstS = steps[0];
+    tracks = [{ 
+        steps, 
+        ball: { x: firstS.x - 450, y: firstS.y - BALL_R, vx: BALL_VX, vy: 0 }, 
+        cur: 0,
+        isFirstStrike: true // 標記為第一次平行滑入
+    }];
 }
 
 function togglePlay() {
@@ -194,18 +214,33 @@ function loop(timestamp) {
         if (isBallMoving) {
             const t = tracks[0], b = t.ball;
             let prevY = b.y;
-            b.vy += GRAVITY * dt;
-            b.x += b.vx * dt;
-            b.y += b.vy * dt;
+            
+            // 物理運算
+            if (t.isFirstStrike) {
+                // 在撞到第一個音符前，vy 強制為 0，進行平行移動
+                b.x += b.vx * dt;
+                const firstS = t.steps[0];
+                if (b.x >= firstS.x) {
+                    b.x = firstS.x;
+                    b.vy = BOUNCE_UP; // 撞擊後獲得向上的彈力
+                    t.isFirstStrike = false; // 之後恢復重力物理
+                    hitStep(firstS);
+                }
+            } else {
+                b.vy += GRAVITY * dt;
+                b.x += b.vx * dt;
+                b.y += b.vy * dt;
 
-            for (let i = t.cur; i < Math.min(t.cur + 8, t.steps.length); i++) {
-                let s = t.steps[i];
-                if (b.x >= s.x && b.x <= s.x + s.w && prevY + BALL_R <= s.y + 10 && b.y + BALL_R >= s.y) {
-                    b.y = s.y - BALL_R; b.vy = BOUNCE_UP;
-                    t.cur = i; hitStep(s); break;
+                for (let i = t.cur; i < Math.min(t.cur + 8, t.steps.length); i++) {
+                    let s = t.steps[i];
+                    if (b.x >= s.x && b.x <= s.x + s.w && prevY + BALL_R <= s.y + 10 && b.y + BALL_R >= s.y) {
+                        b.y = s.y - BALL_R; b.vy = BOUNCE_UP;
+                        t.cur = i; hitStep(s); break;
+                    }
                 }
             }
-            // 通用判斷：掉落超過最後階梯 500px 自動存檔
+            
+            // 自動結束判斷
             if (t.cur >= t.steps.length - 1 && b.y > t.steps[t.steps.length-1].y + 500) triggerEndSequence();
             
             camX += (b.x - canvas.width * 0.25 - camX) * 0.1;
