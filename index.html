@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>木琴工坊 - 錄影寫入強化版</title>
+    <title>木琴工坊 - 錄影強化版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --success: #10b981; }
@@ -21,6 +21,7 @@
         #playBtn { background: var(--success); }
         #recBtn { background: #ef4444; border: 4px solid #fff; }
         #recBtn.is-recording { border-radius: 12px; background: #991b1b; animation: pulse 1.5s infinite; }
+        #recBtn.is-saving { background: #475569; opacity: 0.7; cursor: wait; border: none; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
         input[type="file"], input[type="text"] { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #334155; background: #0f172a; color: #fff; margin-bottom: 10px; box-sizing: border-box; }
         .primary-btn { width: 100%; padding: 18px; border-radius: 15px; background: var(--accent); color: white; border: none; font-size: 16px; font-weight: bold; cursor: pointer; }
@@ -30,13 +31,13 @@
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="text-align:center; margin: 0 0 20px 0;">🎬 Ending 錄製強化</h2>
+        <h2 style="text-align:center; margin: 0 0 20px 0;">🎬 完美 Ending 錄製</h2>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleManualMidi(this)">
-        <div id="trackContainer" class="track-list">讀取 MIDI...</div>
+        <div id="trackContainer" class="track-list">讀取 MIDI 中...</div>
         <input type="file" id="galleryFiles" multiple accept="image/*" onchange="previewImages(this)">
         <div id="photoPreview"></div>
-        <input type="text" id="msgInit" value="Thanks for Watching!">
-        <button id="entryBtn" class="primary-btn" onclick="enterScene()" disabled>開始</button>
+        <input type="text" id="msgInit" value="Fantastic Music!">
+        <button id="entryBtn" class="primary-btn" onclick="enterScene()" disabled>進入場景</button>
     </div>
 </div>
 
@@ -52,12 +53,10 @@ const canvas = document.getElementById('stage');
 const ctx = canvas.getContext('2d', { alpha: false });
 let audioCtx, tracks = [], isRunning = false, isBallMoving = false, gallery = [], stars = [];
 let camX = 0, camY = 0, recorder, chunks = [], audioDest, selectedTrackData = null;
-let isFinishing = false, isRecording = false, currentMsg = "";
+let isFinishing = false, isRecording = false, isSaving = false, currentMsg = "";
 let lastTime = 0, isInitialSlide = true;
 
-const cornerImg = new Image(); 
-cornerImg.src = 'IMG_6604.png'; 
-
+const cornerImg = new Image(); cornerImg.src = 'IMG_6604.png';
 const GRAVITY = 3600, BALL_VX = 400, BOUNCE_UP = -40, BALL_R = 12;
 const NOTE_COLORS = ["#FF5252", "#FF4081", "#E040FB", "#7C4DFF", "#536DFE", "#448AFF", "#40C4FF", "#18FFFF", "#64FFDA", "#69F0AE", "#B2FF59", "#EEFF41"];
 
@@ -85,7 +84,7 @@ function processMidiBuffer(buf) {
         if(t.notes.length === 0) return;
         const item = document.createElement('div');
         item.className = "track-item";
-        item.innerHTML = `音軌 ${i+1} (${t.notes.length})`;
+        item.innerHTML = `音軌 ${i+1} (${t.notes.length} 音符)`;
         item.onclick = () => {
             selectedTrackData = t;
             document.querySelectorAll('.track-item').forEach(el => el.classList.remove('active'));
@@ -119,8 +118,7 @@ async function enterScene() {
     document.getElementById('setupPanel').style.display = 'none';
     document.getElementById('recordUI').style.display = 'flex';
     audioDest = audioCtx.createMediaStreamDestination();
-    isRunning = true; lastTime = performance.now();
-    requestAnimationFrame(loop);
+    isRunning = true; requestAnimationFrame(loop);
 }
 
 function buildSteps(track) {
@@ -140,8 +138,8 @@ function buildSteps(track) {
     tracks = [{ steps, ball: { x: steps[0].x - 450, y: steps[0].y - BALL_R, vx: BALL_VX, vy: 0 }, cur: 0 }];
 }
 
-function loop(timestamp) {
-    let dt = 1/60; 
+function loop() {
+    const dt = 1/60; 
     if (isRunning) {
         if (isBallMoving && !isFinishing) {
             const t = tracks[0], b = t.ball;
@@ -219,15 +217,15 @@ function draw() {
 function togglePlay() { isBallMoving = !isBallMoving; document.getElementById('playBtn').innerText = isBallMoving ? "暫停" : "播放"; }
 
 function handleRecording() {
+    if (isSaving) return;
     if (!isRecording) {
         chunks = [];
         const stream = canvas.captureStream(30);
         const combined = new MediaStream([...stream.getTracks(), ...audioDest.stream.getTracks()]);
-        // 💡 調整：使用更長的請求間隔 (requestData)，確保編碼穩定
-        recorder = new MediaRecorder(combined, { mimeType: 'video/webm;codecs=vp8', videoBitsPerSecond: 3000000 });
+        recorder = new MediaRecorder(combined, { mimeType: 'video/webm;codecs=vp8', videoBitsPerSecond: 4000000 });
         recorder.ondataavailable = e => { if(e.data.size > 0) chunks.push(e.data); };
         recorder.onstop = saveVideo;
-        recorder.start(500); // 增加緩衝時間
+        recorder.start(1000); 
         isRecording = true;
         document.getElementById('recBtn').innerText = "STOP";
         document.getElementById('recBtn').classList.add('is-recording');
@@ -237,36 +235,35 @@ function handleRecording() {
 }
 
 function triggerEndSequence() {
-    if (isFinishing) return;
+    if (isFinishing || isSaving) return;
     isFinishing = true;
     isBallMoving = false;
-    
-    // 💡 關鍵：強制再錄製 4 秒，並在此期間持續發送數據給 Recorder
-    let stopTimer = 0;
-    const finalRecordingLoop = () => {
-        draw(); 
-        stopTimer++;
-        if (stopTimer < 240) { // 30fps * 8s 確保足夠時間寫入最後一秒
-            // 手動請求數據寫入 Buffer
-            if (stopTimer % 30 === 0) recorder.requestData(); 
-            requestAnimationFrame(finalRecordingLoop);
-        } else {
-            if (recorder && recorder.state !== 'inactive') {
-                recorder.stop();
-            }
+    isSaving = true;
+
+    const recBtn = document.getElementById('recBtn');
+    recBtn.innerText = "WAIT...";
+    recBtn.classList.remove('is-recording');
+    recBtn.classList.add('is-saving');
+
+    // 💡 關鍵保險：每 500ms 強制刷新一次數據，連刷 8 次 (4秒)
+    let flushCount = 0;
+    const flusher = setInterval(() => {
+        if (recorder && recorder.state === 'recording') {
+            recorder.requestData(); // 強迫瀏覽器把目前的留言板畫面「推」進緩衝區
         }
-    };
-    finalRecordingLoop();
+        flushCount++;
+        if (flushCount >= 8) {
+            clearInterval(flusher);
+            if (recorder && recorder.state !== 'inactive') recorder.stop();
+        }
+    }, 500);
 }
 
 function saveVideo() {
-    // 💡 關鍵：確保錄影狀態完全停止後才下載
     const blob = new Blob(chunks, { type: 'video/webm' });
-    const a = document.createElement('a'); 
-    a.href = URL.createObjectURL(blob);
-    a.download = `mario_verified_ending_${Date.now()}.webm`; 
-    a.click();
-    setTimeout(() => location.reload(), 1500);
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = `mario_app_fix_${Date.now()}.webm`; a.click();
+    setTimeout(() => location.reload(), 2000);
 }
 </script>
 </body>
