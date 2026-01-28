@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴工坊 - 固定板長寬闊版</title>
+    <title>AI 木琴工坊 - 無縫銜接版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --panel: rgba(15, 23, 42, 0.98); }
@@ -26,14 +26,14 @@
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="margin:0;">🎹 經典板長寬闊版</h2>
+        <h2 style="margin:0;">🔗 無縫銜接展演</h2>
         <div class="section-title">1. MIDI 軌道 (預設已載入)</div>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleMidiUpload(this)">
         <div id="trackContainer" class="track-list">讀取中...</div>
         <div class="section-title">2. 照片廊道 (多選)</div>
         <input type="file" id="galleryFiles" multiple accept="image/*">
         <div class="section-title">3. 結束留言</div>
-        <input type="text" id="msgInit" value="Fixed Length, Wide Spacing. 終">
+        <input type="text" id="msgInit" value="Seamless Connection. 終">
         <button id="entryBtn" class="btn" onclick="enterScene()" disabled>確認並進入</button>
     </div>
 </div>
@@ -50,11 +50,10 @@ const TIME_SCALE = 180;
 const CONFIG = { 
     GRAVITY: 0.35, 
     BALL_VX: TIME_SCALE / 60, 
-    BOUNCE_UP: -0.4,          // 略微增加彈力以應付長距離跳躍
+    BOUNCE_UP: -0.38, 
     STEP_Y_GAP: 5, 
     TIME_SCALE: TIME_SCALE,     
-    BALL_R: 10,
-    FIXED_STEP_W: 80         // 固定板長：80 像素
+    BALL_R: 10 
 };
 
 const canvas = document.getElementById('stage');
@@ -91,7 +90,7 @@ window.addEventListener('load', async () => {
 
 function loadDefaultMelody() {
     const container = document.getElementById('trackContainer');
-    container.innerHTML = `<div class="track-item active" id="defaultTrack"><span>預設旋律 (固定板長)</span></div>`;
+    container.innerHTML = `<div class="track-item active" id="defaultTrack"><span>預設旋律 (無縫版)</span></div>`;
     selectedTrackIdx = 999;
     document.getElementById('entryBtn').disabled = false;
     document.getElementById('defaultTrack').onclick = () => {
@@ -163,7 +162,7 @@ async function enterScene() {
         const img = new Image(); img.src = URL.createObjectURL(gFiles[i]);
         await new Promise(r => img.onload = r);
         const targetIdx = Math.floor((i / gFiles.length) * (steps.length - 1));
-        gallery.push({ img, x: steps[targetIdx].x + 100, y: steps[targetIdx].y - 320, w: 320 });
+        gallery.push({ img, x: steps[targetIdx].x + 120, y: steps[targetIdx].y - 300, w: 320 });
     }
     document.getElementById('setupPanel').style.display = 'none';
     document.getElementById('recordUI').style.display = 'flex';
@@ -173,10 +172,21 @@ async function enterScene() {
 function buildSteps(track) {
     let steps = [], currentY = 400;
     const notes = [...track.notes].sort((a,b) => a.time - b.time);
+    
     notes.forEach((n, i) => {
         let x = n.time * CONFIG.TIME_SCALE;
-        // 這裡不再使用 dur 延伸，而是使用固定寬度
-        let w = CONFIG.FIXED_STEP_W; 
+        let w = 80; // 預設最小寬度
+        
+        // 頭尾銜接關鍵邏輯：
+        // 當前板子的寬度 = 下一塊板子的起點 - 當前板子的起點
+        if (i < notes.length - 1) {
+            let nextX = notes[i+1].time * CONFIG.TIME_SCALE;
+            w = nextX - x;
+        } else {
+            // 最後一塊板子給予固定寬度
+            w = 150;
+        }
+        
         currentY += CONFIG.STEP_Y_GAP;
         steps.push({ x, y: currentY, w: w, freq: 440*Math.pow(2,(n.midi-69)/12), color: `hsla(${(n.midi*15)%360}, 75%, 60%, 0.8)`, active: 0, flash: 0 });
     });
@@ -196,7 +206,7 @@ function startRecording() {
     recorder.onstop = () => {
         const blob = new Blob(chunks, { type: 'video/webm' });
         const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-        a.download = `spacing_show_${Date.now()}.webm`; a.click();
+        a.download = `seamless_show_${Date.now()}.webm`; a.click();
         setTimeout(() => location.reload(), 1000);
     };
     recorder.start(100);
@@ -210,9 +220,9 @@ function update() {
     b.vy += CONFIG.GRAVITY; b.x += b.vx; b.y += b.vy;
     if (t.cur >= t.steps.length) { triggerFinish(); return; }
     
-    // 遍歷所有階梯檢測碰撞，不只侷限於當前序號，確保大間距跳躍穩定
     t.steps.forEach((s, idx) => {
-        if (b.x >= s.x && b.x <= s.x + s.w && b.y + CONFIG.BALL_R >= s.y && b.y < s.y + 20 && b.vy >= 0) {
+        // 碰撞偵測略微放寬 Y 軸判斷，確保無縫銜接處能順利觸發下一音符
+        if (b.x >= s.x && b.x < s.x + s.w && b.y + CONFIG.BALL_R >= s.y && b.y < s.y + 15 && b.vy >= 0) {
             b.y = s.y - CONFIG.BALL_R; b.vy = CONFIG.BOUNCE_UP;
             if (!s.active) {
                 const osc = audioCtx.createOscillator();
@@ -220,15 +230,14 @@ function update() {
                 osc.type = 'triangle'; 
                 osc.frequency.setValueAtTime(s.freq, audioCtx.currentTime);
                 g.gain.setTargetAtTime(0.3, audioCtx.currentTime, 0.01);
-                g.gain.setTargetAtTime(0, audioCtx.currentTime + 0.15, 0.25);
+                g.gain.setTargetAtTime(0, audioCtx.currentTime + 0.15, 0.2);
                 osc.connect(g); g.connect(audioCtx.destination); g.connect(audioDest);
-                osc.start(); osc.stop(audioCtx.currentTime + 0.9);
+                osc.start(); osc.stop(audioCtx.currentTime + 0.8);
                 s.active = 1; s.flash = 1.0;
                 t.cur = idx + 1;
             }
         }
     });
-    
     camX += (b.x - canvas.width/2 - camX) * 0.15; camY += (b.y - canvas.height/2 - camY) * 0.15;
 }
 
@@ -241,7 +250,7 @@ function draw() {
         tracks[0].steps.forEach(s => {
             if (s.x > camX - 200 && s.x < camX + canvas.width + 400) {
                 ctx.fillStyle = s.color; ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, 12, 6); ctx.fill();
-                if(s.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${s.flash})`; ctx.fill(); s.flash *= 0.9; }
+                if(s.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${s.flash})`; ctx.fill(); s.flash *= 0.8; }
             }
         });
         if (!isFinishing && isBallMoving) {
