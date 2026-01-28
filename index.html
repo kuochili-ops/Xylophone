@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴工坊 - 速度優化版</title>
+    <title>AI 木琴工坊 - 穩定試聽與極速優化</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --panel: rgba(15, 23, 42, 0.98); }
@@ -11,10 +11,10 @@
         .config-card { background: var(--panel); padding: 30px; border-radius: 20px; border: 2px solid #334155; width: 450px; text-align: center; }
         .section-title { font-size: 13px; color: var(--accent); margin: 15px 0 5px 0; font-weight: bold; text-align: left; }
         .track-list { margin: 10px 0; max-height: 200px; overflow-y: auto; background: #070b14; border-radius: 10px; padding: 10px; border: 1px solid #1e293b; text-align: left; }
-        .track-item { padding: 12px; margin-bottom: 8px; background: #1e293b; border-radius: 8px; cursor: pointer; font-size: 13px; transition: 0.2s; border: 1px solid transparent; }
+        .track-item { padding: 12px; margin-bottom: 8px; background: #1e293b; border-radius: 8px; cursor: pointer; font-size: 13px; transition: 0.2s; border: 1px solid transparent; display: flex; justify-content: space-between; align-items: center; }
         .track-item:hover { background: #2d3a4f; }
         .track-item.active { background: var(--accent); border-color: #fff; box-shadow: 0 0 10px rgba(59, 130, 246, 0.5); }
-        .track-item .preview-tag { float: right; font-size: 10px; background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px; }
+        .preview-tag { font-size: 10px; background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px; }
         .record-ui { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; display: none; gap: 12px; background: var(--panel); padding: 12px 28px; border-radius: 50px; border: 1px solid #3b82f6; }
         .ctrl-btn { border: none; padding: 10px 22px; border-radius: 20px; cursor: pointer; font-weight: bold; }
         #playBtn { background: #10b981; color: white; }
@@ -27,14 +27,14 @@
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="margin:0;">🎵 速度調整版 (0.9x)</h2>
-        <div class="section-title">1. MIDI 軌道 (點擊試聽)</div>
+        <h2 style="margin:0;">🎵 穩定試聽與速度優化</h2>
+        <div class="section-title">1. MIDI 軌道 (點擊切換試聽)</div>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleMidiUpload(this)">
         <div id="trackContainer" class="track-list">讀取音樂中...</div>
         <div class="section-title">2. 照片廊道 (多選)</div>
         <input type="file" id="galleryFiles" multiple accept="image/*">
         <div class="section-title">3. 結束留言</div>
-        <input type="text" id="msgInit" value="Wonderful Performance! 終">
+        <input type="text" id="msgInit" value="Splendid Performance! 終">
         <button id="entryBtn" class="btn" onclick="enterScene()" disabled>確認並進入</button>
     </div>
 </div>
@@ -47,13 +47,13 @@
 <canvas id="stage"></canvas>
 
 <script>
-// 物理參數調優為 0.9x
+// 物理參數再度乘以 0.9 (累計 0.5.2 * 0.9 * 0.9 = 4.212)
 const CONFIG = { 
-    GRAVITY: 1.1,        // 稍微降低重力讓球跳得更自然
-    BALL_VX: 4.68,       // 原始 5.2 * 0.9
-    BOUNCE_UP: -0.6, 
+    GRAVITY: 1.0,        
+    BALL_VX: 4.21,       
+    BOUNCE_UP: -0.55, 
     STEP_Y_GAP: 15, 
-    TIME_SCALE: 288,     // 原始 320 * 0.9
+    TIME_SCALE: 259,     
     BALL_R: 10 
 };
 
@@ -62,8 +62,10 @@ const ctx = canvas.getContext('2d', { alpha: false });
 let audioCtx, tracks = [], isRunning = false, isBallMoving = false, fullMidi, gallery = [];
 let camX = 0, camY = 0, recorder, chunks = [], audioDest, selectedTrackIdx = -1;
 let isFinishing = false, finishAlpha = 0, isRecording = false, currentMsg = "";
-let saveCounter = 0, previewTimeout = null;
-const cornerImg = new Image(); cornerImg.src = 'IMG_6604.png';
+let saveCounter = 0;
+
+// 試聽管理系統
+let activePreviewOscillators = [];
 
 canvas.width = window.innerWidth; canvas.height = window.innerHeight;
 
@@ -90,23 +92,33 @@ function parseMidi(buf) {
         if(t.notes.length < 2) return;
         const item = document.createElement('div');
         item.className = "track-item";
-        item.innerHTML = `<span>軌道 ${i+1} (${t.notes.length} 音符)</span><span class="preview-tag">試聽</span>`;
+        item.innerHTML = `<span>軌道 ${i+1} (${t.notes.length})</span><span class="preview-tag">試聽中...</span>`;
         item.onclick = async () => {
             await ensureAudioStarted();
+            stopAllPreviews(); // 先停止所有舊音訊
             selectedTrackIdx = i;
             document.querySelectorAll('.track-item').forEach(e => e.classList.remove('active'));
             item.classList.add('active');
             document.getElementById('entryBtn').disabled = false;
-            previewTrack旋律(t);
+            previewTrack(t);
         };
         container.appendChild(item);
     });
 }
 
-function previewTrack旋律(track) {
-    if (previewTimeout) { clearTimeout(previewTimeout); }
+function stopAllPreviews() {
+    activePreviewOscillators.forEach(obj => {
+        try {
+            obj.osc.stop();
+            obj.osc.disconnect();
+        } catch(e){}
+    });
+    activePreviewOscillators = [];
+}
+
+function previewTrack(track) {
     const now = audioCtx.currentTime;
-    const previewNotes = track.notes.slice(0, 15);
+    const previewNotes = track.notes.slice(0, 20); // 增加試聽長度至 20 音符
     previewNotes.forEach(n => {
         const osc = audioCtx.createOscillator();
         const g = audioCtx.createGain();
@@ -119,6 +131,7 @@ function previewTrack旋律(track) {
         g.connect(audioCtx.destination);
         osc.start(now + n.time);
         osc.stop(now + n.time + 0.4);
+        activePreviewOscillators.push({ osc, g });
     });
 }
 
@@ -136,6 +149,7 @@ function drawFramedImage(item) {
 }
 
 async function enterScene() {
+    stopAllPreviews();
     await ensureAudioStarted();
     currentMsg = document.getElementById('msgInit').value;
     buildSteps(fullMidi.tracks[selectedTrackIdx]);
@@ -182,7 +196,7 @@ function startRecording() {
     recorder.onstop = () => {
         const blob = new Blob(chunks, { type: 'video/webm' });
         const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-        a.download = `music_${Date.now()}.webm`; a.click();
+        a.download = `performance_${Date.now()}.webm`; a.click();
         setTimeout(() => location.reload(), 1000);
     };
     recorder.start(100);
