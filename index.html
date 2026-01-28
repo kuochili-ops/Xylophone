@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴工坊 - 設定修復版</title>
+    <title>AI 木琴工坊 - 手動終止版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --panel: rgba(15, 23, 42, 0.98); }
@@ -14,161 +14,112 @@
         .track-item { padding: 10px; margin-bottom: 5px; background: #1e293b; border-radius: 6px; cursor: pointer; font-size: 12px; }
         .track-item.active { background: var(--accent); border: 1px solid #fff; }
         .record-ui { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; display: none; gap: 10px; background: var(--panel); padding: 10px 25px; border-radius: 50px; border: 1px solid #3b82f6; }
-        .ctrl-btn { border: none; padding: 10px 25px; border-radius: 20px; cursor: pointer; font-weight: bold; }
+        .ctrl-btn { border: none; padding: 10px 25px; border-radius: 20px; cursor: pointer; font-weight: bold; transition: all 0.3s; }
         #playBtn { background: #10b981; color: white; }
         #recBtn { background: #ef4444; color: white; }
+        #recBtn.is-recording { background: #f59e0b; color: #000; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
         input { width: 100%; padding: 12px; margin-bottom: 10px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: #fff; box-sizing: border-box; }
-        .btn { width: 100%; padding: 15px; border-radius: 10px; background: var(--accent); color: white; border:none; font-weight: bold; cursor:pointer; transition: opacity 0.2s; }
-        .btn:disabled { opacity: 0.3; cursor: not-allowed; }
-        .btn:active { transform: scale(0.98); }
+        .btn { width: 100%; padding: 15px; border-radius: 10px; background: var(--accent); color: white; border:none; font-weight: bold; cursor:pointer; }
+        .btn:disabled { opacity: 0.3; }
     </style>
 </head>
 <body>
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="margin:0;">⚙️ 系統初始化</h2>
-        <div id="statusMsg" style="font-size:12px; color:#94a3b8; margin-top:5px;">正在準備資源...</div>
-        
-        <div class="section-title">1. MIDI 軌道 (必選)</div>
+        <h2 style="margin:0;">⚙️ 展演控制中心</h2>
+        <div class="section-title">1. MIDI 軌道 (預載 Mario)</div>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleMidiUpload(this)">
-        <div id="trackContainer" class="track-list">正在載入 Mario 預載檔...</div>
-        
-        <div class="section-title">2. 廊道照片 (選填)</div>
+        <div id="trackContainer" class="track-list">讀取中...</div>
+        <div class="section-title">2. 廊道照片</div>
         <input type="file" id="galleryFiles" multiple accept="image/*">
-        
         <div class="section-title">3. 結束留言</div>
-        <input type="text" id="msgInit" value="It's-a Me, Mario!">
-        
-        <button id="entryBtn" class="btn" onclick="enterScene()" disabled>確認並啟動系統</button>
+        <input type="text" id="msgInit" value="Thanks for Watching!">
+        <button id="entryBtn" class="btn" onclick="enterScene()" disabled>確認並啟動</button>
     </div>
 </div>
 
 <div class="record-ui" id="recordUI">
     <button id="playBtn" class="ctrl-btn" onclick="togglePlay()">▶ 播放球</button>
-    <button id="recBtn" class="ctrl-btn" onclick="toggleRecord()">🔴 啟動錄製</button>
+    <button id="recBtn" class="ctrl-btn" onclick="handleRecClick()">🔴 錄製啟動</button>
 </div>
 
 <canvas id="stage"></canvas>
 
 <script>
-// --- 物理參數 ---
 const CONFIG = {
     GRAVITY: 1.2, BALL_VX: 5.2, BOUNCE_UP: -0.5, STEP_Y_GAP: 15,
-    TIME_SCALE: 310, BALL_R: 10, END_DELAY: 4000
+    TIME_SCALE: 310, BALL_R: 10, END_DELAY: 3000
 };
 
 const canvas = document.getElementById('stage');
 const ctx = canvas.getContext('2d', { alpha: false });
-let audioCtx, tracks = [], isRunning = false, isBallMoving = false, fullMidi = null;
+let audioCtx, tracks = [], isRunning = false, isBallMoving = false, fullMidi, gallery = [];
 let camX = 0, camY = 0, recorder, chunks = [], audioDest, selectedTrackIdx = -1;
 let isFinishing = false, finishAlpha = 0, isRecording = false, currentMsg = "";
-let gallery = [];
 const cornerImg = new Image(); cornerImg.src = 'IMG_6604.png';
 
 canvas.width = window.innerWidth; canvas.height = window.innerHeight;
 
-// --- 初始化音訊 ---
 function initAudio() {
-    try {
-        if (!audioCtx) {
-            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            audioDest = audioCtx.createMediaStreamDestination();
-        }
-        if (audioCtx.state === 'suspended') audioCtx.resume();
-    } catch(e) { console.error("Audio Init Error", e); }
+    if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        audioDest = audioCtx.createMediaStreamDestination();
+    }
+    if (audioCtx.state === 'suspended') audioCtx.resume();
 }
 
-// --- MIDI 載入邏輯 ---
 window.addEventListener('load', async () => {
     try {
         const res = await fetch('Mario Bros. - Super Mario Bros. Theme.mid');
-        if (res.ok) {
-            const buf = await res.arrayBuffer();
-            parseMidi(buf);
-            document.getElementById('statusMsg').innerText = "預載音樂完成";
-        } else { throw new Error(); }
-    } catch (e) {
-        document.getElementById('trackContainer').innerText = "預載失敗，請手動上傳 MIDI";
-        document.getElementById('statusMsg').innerText = "等待手動上傳...";
-    }
+        if (res.ok) parseMidi(await res.arrayBuffer());
+    } catch (e) { document.getElementById('trackContainer').innerText = "請手動上傳 MIDI"; }
 });
 
 function parseMidi(buf) {
-    try {
-        fullMidi = new Midi(buf);
-        const container = document.getElementById('trackContainer');
-        container.innerHTML = "";
-        let validTrackFound = false;
-        fullMidi.tracks.forEach((t, i) => {
-            if(t.notes.length === 0) return;
-            validTrackFound = true;
-            const item = document.createElement('div');
-            item.className = "track-item";
-            item.innerText = `軌道 ${i+1} (${t.notes.length} 音符)`;
-            item.onclick = () => {
-                initAudio();
-                selectedTrackIdx = i;
-                document.querySelectorAll('.track-item').forEach(e => e.classList.remove('active'));
-                item.classList.add('active');
-                document.getElementById('entryBtn').disabled = false;
-            };
-            container.appendChild(item);
-        });
-        if(!validTrackFound) document.getElementById('statusMsg').innerText = "MIDI 檔案無效";
-    } catch(e) {
-        alert("MIDI 解析錯誤");
-    }
+    fullMidi = new Midi(buf);
+    const container = document.getElementById('trackContainer');
+    container.innerHTML = "";
+    fullMidi.tracks.forEach((t, i) => {
+        if(t.notes.length === 0) return;
+        const item = document.createElement('div');
+        item.className = "track-item";
+        item.innerText = `音軌 ${i+1} (${t.notes.length} 音符)`;
+        item.onclick = () => {
+            initAudio();
+            selectedTrackIdx = i;
+            document.querySelectorAll('.track-item').forEach(e => e.classList.remove('active'));
+            item.classList.add('active');
+            document.getElementById('entryBtn').disabled = false;
+        };
+        container.appendChild(item);
+    });
 }
 
 function handleMidiUpload(input) {
     if(!input.files[0]) return;
-    document.getElementById('statusMsg').innerText = "正在解析上傳檔案...";
     input.files[0].arrayBuffer().then(parseMidi);
 }
 
-// --- 進入場景 (關鍵修復點) ---
 async function enterScene() {
-    if (!fullMidi || selectedTrackIdx === -1) return;
-    
-    // 改為按鈕視覺回饋，防止連點
-    const btn = document.getElementById('entryBtn');
-    btn.innerText = "處理中...";
-    btn.disabled = true;
-
     initAudio();
     currentMsg = document.getElementById('msgInit').value;
+    buildSteps(fullMidi.tracks[selectedTrackIdx]);
     
-    try {
-        buildSteps(fullMidi.tracks[selectedTrackIdx]);
-        
-        // 處理照片 (選填)
-        const gFiles = document.getElementById('galleryFiles').files;
-        if (gFiles.length > 0) {
-            const steps = tracks[0].steps;
-            for (let i = 0; i < gFiles.length; i++) {
-                const img = new Image();
-                img.src = URL.createObjectURL(gFiles[i]);
-                await new Promise((resolve) => {
-                    img.onload = resolve;
-                    img.onerror = resolve; // 失敗也跳過
-                });
-                const targetIdx = Math.floor((i / gFiles.length) * (steps.length - 1));
-                const s = steps[targetIdx];
-                gallery.push({ img, x: s.x + 180, y: s.y - 350, w: 320 });
-            }
-        }
-        
-        // 成功隱藏面板
-        document.getElementById('setupPanel').style.display = 'none';
-        document.getElementById('recordUI').style.display = 'flex';
-        isRunning = true;
-    } catch (err) {
-        console.error(err);
-        alert("啟動場景時發生錯誤，請重新整理頁面。");
-        btn.innerText = "確認並啟動系統";
-        btn.disabled = false;
+    const gFiles = document.getElementById('galleryFiles').files;
+    const steps = tracks[0].steps;
+    for (let i = 0; i < gFiles.length; i++) {
+        const img = new Image(); img.src = URL.createObjectURL(gFiles[i]);
+        await new Promise(r => img.onload = r);
+        const targetIdx = Math.floor((i / gFiles.length) * (steps.length - 1));
+        const s = steps[targetIdx];
+        gallery.push({ img, x: s.x + 180, y: s.y - 350, w: 320 });
     }
+
+    document.getElementById('setupPanel').style.display = 'none';
+    document.getElementById('recordUI').style.display = 'flex';
+    isRunning = true;
 }
 
 function buildSteps(track) {
@@ -181,60 +132,73 @@ function buildSteps(track) {
             if (gap > 10) steps[i-1].w += (gap - 2); 
         }
         currentY += CONFIG.STEP_Y_GAP;
-        const hue = (n.midi * 12) % 360;
-        steps.push({ x, y: currentY, w, freq: 440*Math.pow(2,(n.midi-69)/12), color: `hsla(${hue}, 70%, 50%, 0.8)`, active: 0, flash: 0 });
+        const hue = (n.midi * 15) % 360;
+        steps.push({ x, y: currentY, w, freq: 440*Math.pow(2,(n.midi-69)/12), color: `hsla(${hue}, 75%, 60%, 0.8)`, active: 0, flash: 0 });
     });
     tracks = [{ steps, ball: { x: steps[0].x + 5, y: steps[0].y - CONFIG.BALL_R, vx: CONFIG.BALL_VX, vy: 0 }, cur: 0 }];
 }
 
-function drawFramedImage(image, x, y, w) {
-    if(!image.complete) return;
-    const h = w * (image.height / image.width);
-    const border = 14;
-    ctx.fillStyle = "#451a03"; 
-    ctx.fillRect(x - border, y - border, w + border * 2, h + border * 2);
-    ctx.strokeStyle = "#c2410c"; 
-    ctx.lineWidth = 2;
-    ctx.strokeRect(x - border + 2, y - border + 2, w + border * 2 - 4, h + border * 2 - 4);
-    ctx.drawImage(image, x, y, w, h);
-}
-
-// --- 錄影與播放控制 ---
 function togglePlay() {
     isBallMoving = !isBallMoving;
-    document.getElementById('playBtn').innerText = isBallMoving ? "⏸ 暫停" : "▶ 播放球";
+    document.getElementById('playBtn').innerText = isBallMoving ? "⏸ 暫停" : "▶ 播放";
 }
 
-function toggleRecord() {
-    if (isRecording) return;
+// --- 錄影與終止邏輯 ---
+function handleRecClick() {
+    if (!isRecording) {
+        startRecording();
+    } else {
+        // 第二次按下：手動觸發結束流程
+        triggerFinish();
+    }
+}
+
+function startRecording() {
     initAudio();
     chunks = [];
-    try {
-        const stream = new MediaStream([...canvas.captureStream(60).getTracks(), ...audioDest.stream.getTracks()]);
-        recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9', videoBitsPerSecond: 8000000 });
-        recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
-        recorder.onstop = () => {
-            const blob = new Blob(chunks, { type: 'video/webm' });
-            const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-            a.download = `mario_perf_${Date.now()}.webm`; a.click();
-            setTimeout(() => location.reload(), 1000);
-        };
-        recorder.start(200);
-        isRecording = true;
-        document.getElementById('recBtn').innerText = "⏹ 存檔中";
-        document.getElementById('recBtn').style.background = "#991b1b";
-    } catch (e) { alert("錄影失敗"); }
+    const stream = new MediaStream([...canvas.captureStream(60).getTracks(), ...audioDest.stream.getTracks()]);
+    
+    // 優先使用 mp4 格式，若不支援則用 webm
+    const mimeType = ['video/mp4', 'video/webm;codecs=vp9'].find(m => MediaRecorder.isTypeSupported(m));
+    
+    recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 12000000 });
+    recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+    recorder.onstop = () => {
+        const ext = recorder.mimeType.includes('mp4') ? 'mp4' : 'webm';
+        const blob = new Blob(chunks, { type: recorder.mimeType });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `performance_${Date.now()}.${ext}`;
+        a.click();
+        setTimeout(() => location.reload(), 1000);
+    };
+    recorder.start(200);
+    isRecording = true;
+    const btn = document.getElementById('recBtn');
+    btn.innerText = "⏹ 結束並存檔";
+    btn.classList.add('is-recording');
+}
+
+function triggerFinish() {
+    if (isFinishing) return;
+    isFinishing = true;
+    isBallMoving = false;
+    // 停止所有正在播放的音訊節點 (可選)
+    if (isRecording && recorder.state === 'recording') {
+        setTimeout(() => recorder.stop(), CONFIG.END_DELAY);
+    }
 }
 
 function update() {
     if (!isRunning || !isBallMoving || isFinishing) return;
     const t = tracks[0], b = t.ball;
     b.vy += CONFIG.GRAVITY; b.x += b.vx; b.y += b.vy;
+    
     if (t.cur >= t.steps.length) {
-        isFinishing = true;
-        if (isRecording) setTimeout(() => recorder.stop(), CONFIG.END_DELAY);
+        triggerFinish();
         return;
     }
+
     let s = t.steps[t.cur];
     if (s && b.x >= s.x && b.x <= s.x + s.w) {
         if (b.y + CONFIG.BALL_R >= s.y && b.y + CONFIG.BALL_R <= s.y + 25 && b.vy >= 0) {
@@ -263,12 +227,27 @@ function draw() {
     ctx.fillStyle = "#020617"; ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.save();
     ctx.translate(-Math.round(camX), -Math.round(camY));
-    gallery.forEach(item => drawFramedImage(item.img, item.x, item.y, item.w));
+    
+    // 繪製木框廊道
+    gallery.forEach(item => {
+        const h = item.w * (item.img.height / item.img.width);
+        const border = 14;
+        ctx.fillStyle = "#451a03"; 
+        ctx.fillRect(item.x - border, item.y - border, item.w + border * 2, h + border * 2);
+        ctx.strokeStyle = "#c2410c"; 
+        ctx.lineWidth = 2;
+        ctx.strokeRect(item.x - border + 2, item.y - border + 2, item.w + border * 2 - 4, h + border * 2 - 4);
+        ctx.drawImage(item.img, item.x, item.y, item.w, h);
+    });
+
     if (tracks[0]) {
         tracks[0].steps.forEach(s => {
             ctx.fillStyle = s.color;
             ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, 10, 5); ctx.fill();
-            if(s.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${s.flash})`; ctx.fill(); s.flash *= 0.9; }
+            if(s.flash > 0) {
+                ctx.fillStyle = `rgba(255,255,255,${s.flash})`;
+                ctx.fill(); s.flash *= 0.9;
+            }
         });
         if (!isFinishing) {
             const b = tracks[0].ball;
@@ -276,17 +255,23 @@ function draw() {
         }
     }
     ctx.restore();
+    
+    // 結束畫面 (淡入留言板)
     if (isFinishing) {
         finishAlpha = Math.min(finishAlpha + 0.02, 1);
         ctx.fillStyle = `rgba(0,0,0,${finishAlpha * 0.85})`;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.save(); ctx.globalAlpha = finishAlpha;
+        ctx.save();
+        ctx.globalAlpha = finishAlpha;
         ctx.fillStyle = "white"; ctx.font = "bold 50px sans-serif"; ctx.textAlign = "center";
         ctx.fillText(currentMsg, canvas.width/2, canvas.height/2);
-        if (cornerImg.complete) ctx.drawImage(cornerImg, canvas.width/2 - 100, canvas.height/2 + 50, 200, 200);
+        if (cornerImg.complete) {
+            ctx.drawImage(cornerImg, canvas.width/2 - 100, canvas.height/2 + 50, 200, 200);
+        }
         ctx.restore();
     }
-    update(); requestAnimationFrame(draw);
+    update();
+    requestAnimationFrame(draw);
 }
 draw();
 </script>
