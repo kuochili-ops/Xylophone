@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AI 木琴階梯機 - 100% 準確版</title>
+    <title>AI 木琴階梯機 - 加重球版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --panel: rgba(15, 23, 42, 0.98); }
@@ -26,13 +26,13 @@
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="text-align:center; margin:0 0 15px 0;">🛡️ 100% 命中穩定版</h2>
+        <h2 style="text-align:center; margin:0 0 15px 0;">🏋️ 重球物理修正版</h2>
         <div class="section-title">1. MIDI 軌道 (已預載)</div>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleMidiUpload(this)">
-        <div id="trackContainer" class="track-list">掃描中...</div>
+        <div id="trackContainer" class="track-list">讀取中...</div>
         <div class="section-title">2. 結束留言</div>
-        <input type="text" id="msgInit" value="Perfect Performance!">
-        <button id="entryBtn" class="btn" onclick="enterScene()" disabled>進入舞台</button>
+        <input type="text" id="msgInit" value="Perfect Weight & Rhythm!">
+        <button id="entryBtn" class="btn" onclick="enterScene()" disabled>準備開始</button>
     </div>
 </div>
 
@@ -53,12 +53,12 @@ let lastTime = 0;
 
 const cornerImg = new Image(); cornerImg.src = 'IMG_6604.png';
 
-// 物理參數
-const GRAVITY = 2500;      
+// --- 極限加重物理參數 ---
+const GRAVITY = 3200;      // 極大重力，增加重量感
 const BALL_VX = 350;       
-const BOUNCE_UP = -50;     // 降低反彈，使球更貼板
+const BOUNCE_UP = -30;     // 極低回彈，模擬重球撞擊
 const STEP_Y_GAP = 15;     
-const BALL_R = 10;
+const BALL_R = 12;         // 稍微加大球體視覺感
 
 canvas.width = window.innerWidth; canvas.height = window.innerHeight;
 
@@ -77,7 +77,7 @@ function playXylophoneTone(freq, destination) {
     osc.frequency.setValueAtTime(freq, now);
     gain.gain.setValueAtTime(0, now);
     gain.gain.linearRampToValueAtTime(0.3, now + 0.005);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
     osc.connect(gain); gain.connect(destination);
     osc.start(now); osc.stop(now + 0.3);
 }
@@ -123,15 +123,15 @@ function buildSteps(track) {
     track.notes.forEach((n, i) => {
         let x = n.time * BALL_VX; 
         let w = n.duration * BALL_VX;
-        if (w < 15) w = 15; // 確保最小寬度防止穿透
+        if (w < 20) w = 20; // 增加最小碰撞寬度
         if (i > 0) {
             let gap = x - (steps[i-1].x + steps[i-1].w);
-            if (gap > 1) steps[i-1].w += gap; // 消除間隙
+            if (gap > 0) steps[i-1].w += gap + 5; // 故意讓音階重疊，防止掉落
         }
         currentY += STEP_Y_GAP;
         steps.push({ x, y: currentY, w, freq: 440*Math.pow(2,(n.midi-69)/12), active: 0 });
     });
-    tracks = [{ steps, ball: { x: steps[0].x, y: steps[0].y - 100, vx: BALL_VX, vy: 0 }, cur: 0 }];
+    tracks = [{ steps, ball: { x: steps[0].x, y: steps[0].y - 50, vx: BALL_VX, vy: 0 }, cur: 0 }];
 }
 
 function togglePlay() {
@@ -144,64 +144,60 @@ function toggleRecord() {
     if (isRecording) return;
     chunks = [];
     const stream = new MediaStream([...canvas.captureStream(60).getTracks(), ...audioDest.stream.getTracks()]);
-    recorder = new MediaRecorder(stream, { mimeType: 'video/webm', videoBitsPerSecond: 4000000 });
+    recorder = new MediaRecorder(stream, { mimeType: 'video/webm', videoBitsPerSecond: 6000000 });
     recorder.ondataavailable = e => chunks.push(e.data);
     recorder.onstop = saveVideo;
     recorder.start();
     isRecording = true;
-    document.getElementById('recBtn').innerText = "⏹ 存檔中";
+    document.getElementById('recBtn').innerText = "⏹ 存檔";
 }
 
 function saveVideo() {
     const blob = new Blob(chunks, { type: 'video/webm' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = `perfect_perf_${Date.now()}.webm`; a.click();
+    a.download = `heavy_ball_${Date.now()}.webm`; a.click();
     setTimeout(() => location.reload(), 500);
 }
 
 function loop(timestamp) {
     let dt = (timestamp - lastTime) / 1000;
-    if (dt > 0.032) dt = 0.032; 
+    if (dt > 0.02) dt = 0.02; // 強制高頻更新物理，防止穿透
     lastTime = timestamp;
 
     if (isRunning && isBallMoving && !isFinishing) {
         const t = tracks[0], b = t.ball;
-        
-        let prevX = b.x;
         let prevY = b.y;
 
         b.vy += GRAVITY * dt;
         b.x += b.vx * dt;
         b.y += b.vy * dt;
 
-        // 檢查當前與下一個音階
-        for (let i = t.cur; i < Math.min(t.cur + 3, t.steps.length); i++) {
+        // 掃描最近的音階
+        for (let i = t.cur; i < Math.min(t.cur + 5, t.steps.length); i++) {
             let s = t.steps[i];
-            
-            // 範圍偵測：球的 X 路徑是否與音階 X 範圍重疊
-            if (b.x + BALL_R >= s.x && b.x - BALL_R <= s.x + s.w) {
-                // 幾何交點判斷：上一幀在上方，這一幀在下方
-                if (prevY + BALL_R <= s.y + 5 && b.y + BALL_R >= s.y) {
+            if (b.x >= s.x && b.x <= s.x + s.w) {
+                // 如果球下墜且穿過表面
+                if (prevY + BALL_R <= s.y + 10 && b.y + BALL_R >= s.y) {
                     b.y = s.y - BALL_R;
                     b.vy = BOUNCE_UP;
-                    t.cur = i; // 更新當前音階索引
+                    t.cur = i;
                     if (!s.active) {
                         playXylophoneTone(s.freq, audioCtx.destination);
                         playXylophoneTone(s.freq, audioDest);
                         s.active = 1;
                     }
-                    break; 
+                    break;
                 }
             }
         }
 
-        if (t.cur >= t.steps.length - 1 && b.x > t.steps[t.steps.length-1].x + t.steps[t.steps.length-1].w) {
+        if (t.cur >= t.steps.length - 1 && b.x > t.steps[t.steps.length-1].x + 50) {
             isFinishing = true;
             if(isRecording) setTimeout(() => recorder.stop(), 3000);
         }
         
-        camX += (b.x - canvas.width/2 - camX) * 0.2;
-        camY += (b.y - canvas.height/2 - camY) * 0.2;
+        camX += (b.x - canvas.width/2 - camX) * 0.15;
+        camY += (b.y - canvas.height/2 - camY) * 0.15;
     }
 
     draw();
@@ -218,26 +214,26 @@ function draw() {
     if (tracks[0]) {
         for (let s of tracks[0].steps) {
             if(s.x > camX - 200 && s.x < camX + canvas.width + 200) {
-                ctx.fillStyle = s.active ? "#fff" : "rgba(59, 130, 246, 0.4)";
-                ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, 14, 7); ctx.fill();
-                if(s.active) { // 擊中特效
-                    ctx.shadowBlur = 15; ctx.shadowColor = "#fff";
-                    ctx.strokeStyle = "#fff"; ctx.stroke();
-                    ctx.shadowBlur = 0;
-                }
+                // 音階繪製：使用深色填充，擊中變白
+                ctx.fillStyle = s.active ? "#fff" : "rgba(71, 85, 105, 0.8)";
+                ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, 14, 2); ctx.fill();
             }
         }
         if (!isFinishing) {
-            ctx.fillStyle = "#f43f5e";
+            // 加重球的外觀：金屬深紅色
+            ctx.fillStyle = "#991b1b";
             ctx.beginPath(); ctx.arc(tracks[0].ball.x, tracks[0].ball.y, BALL_R, 0, Math.PI*2); ctx.fill();
+            // 亮點增加球體感
+            ctx.fillStyle = "rgba(255,255,255,0.3)";
+            ctx.beginPath(); ctx.arc(tracks[0].ball.x - 3, tracks[0].ball.y - 3, 3, 0, Math.PI*2); ctx.fill();
         }
     }
     ctx.restore();
 
     if (isFinishing) {
-        ctx.fillStyle = "rgba(0,0,0,0.85)";
+        ctx.fillStyle = "rgba(0,0,0,0.9)";
         ctx.fillRect(0,0,canvas.width, canvas.height);
-        ctx.fillStyle = "white"; ctx.font = "bold 35px sans-serif"; ctx.textAlign = "center";
+        ctx.fillStyle = "#60a5fa"; ctx.font = "bold 40px sans-serif"; ctx.textAlign = "center";
         ctx.fillText(currentMsg, canvas.width/2, canvas.height/2);
         if (cornerImg.complete) ctx.drawImage(cornerImg, canvas.width/2-100, canvas.height/2+50, 200, 200);
     }
