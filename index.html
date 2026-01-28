@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>木琴工坊 App - 三球齊步版</title>
+    <title>木琴工坊 App - 全地形穩定版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --success: #10b981; }
@@ -11,7 +11,7 @@
         #setupPanel { position: fixed; inset: 0; background: #020617; z-index: 5000; padding: 20px; display: flex; flex-direction: column; align-items: center; overflow-y: auto; }
         .config-card { background: rgba(15, 23, 42, 0.98); padding: 25px; border-radius: 24px; border: 1px solid #334155; width: 90%; max-width: 420px; }
         #uiPanel { position: fixed; bottom: 30px; right: 20px; z-index: 1000; display: none; flex-direction: column; align-items: flex-end; gap: 12px; }
-        .panel-content { background: rgba(15, 23, 42, 0.95); padding: 15px; border-radius: 20px; border: 1px solid #475569; display: flex; gap: 10px; backdrop-filter: blur(15px); }
+        .panel-content { background: rgba(15, 23, 42, 0.95); padding: 15px; border-radius: 20px; border: 1px solid #475569; display: flex; gap: 10px; backdrop-filter: blur(15px); box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
         #uiPanel.collapsed .panel-content { opacity: 0; transform: translateY(20px) scale(0.9); pointer-events: none; }
         .toggle-btn { width: 55px; height: 55px; border-radius: 50%; background: #1e293b; border: 2px solid #475569; color: white; font-size: 24px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
         .action-btn { padding: 12px 24px; border-radius: 12px; border: none; font-weight: bold; color: white; cursor: pointer; }
@@ -26,13 +26,13 @@
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="text-align:center; margin-top:0; color:var(--accent);">🎹 木琴工坊 - 齊步對齊</h2>
+        <h2 style="text-align:center; margin-top:0; color:var(--accent);">🎹 木琴工坊 - 穩定錄製</h2>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleMidi(this)">
-        <div id="trackInfo" style="font-size:12px; color:#94a3b8; margin:10px 0;">解析時間差並同步起點...</div>
+        <div id="trackInfo" style="font-size:12px; color:#94a3b8; margin:10px 0;">已優化 Hawaii 等長空隙曲目...</div>
         <input type="file" id="galleryFiles" multiple accept="image/*" onchange="previewImages(this)">
         <div id="photoPreview"></div>
-        <input type="text" id="msgInit" value="Synchronized Harmony.">
-        <button id="entryBtn" class="primary-btn" onclick="enterScene()" disabled>進入錄製場景</button>
+        <input type="text" id="msgInit" value="Hawaii 5-O Remix">
+        <button id="entryBtn" class="primary-btn" onclick="enterScene()" disabled>進入場景</button>
     </div>
 </div>
 
@@ -53,7 +53,7 @@ let audioCtx, tracks = [], isRunning = false, isBallMoving = false, gallery = []
 let camX = 0, camY = 0, midiData = null, currentMsg = "";
 const cornerImg = new Image(); cornerImg.src = 'IMG_6604.png';
 
-const GRAVITY = 3200, BALL_VX = 400, BOUNCE_UP = -22, BALL_R = 12;
+const GRAVITY = 3200, BALL_VX = 400, BOUNCE_UP = -24, BALL_R = 12;
 const TRACK_COLORS = ["#ff4757", "#54a0ff", "#2ed573"];
 
 canvas.width = window.innerWidth; canvas.height = window.innerHeight;
@@ -62,7 +62,7 @@ function handleMidi(input) {
     if(input.files[0]) {
         input.files[0].arrayBuffer().then(buf => {
             midiData = new Midi(buf);
-            document.getElementById('trackInfo').innerText = "已計算時間差，起點已校準。";
+            document.getElementById('trackInfo').innerText = "MIDI 解析成功，已強化路徑支撐。";
             document.getElementById('entryBtn').disabled = false;
         });
     }
@@ -82,8 +82,6 @@ async function enterScene() {
     currentMsg = document.getElementById('msgInit').value;
     
     const sorted = [...midiData.tracks].sort((a,b) => b.notes.length - a.notes.length).slice(0, 3);
-    
-    // 找出所有軌道中最早的音符時間
     let globalStartTime = Math.min(...sorted.map(t => t.notes[0]?.time || 0));
 
     sorted.forEach((track, idx) => {
@@ -91,28 +89,24 @@ async function enterScene() {
         const baseOffset = idx * 220;
         const rawNotes = track.notes.sort((a,b) => a.time - b.time);
         
-        // 核心邏輯：如果該軌第一個音比較晚，補齊起點到第一個音的路徑
-        let firstNoteX = rawNotes[0].time * BALL_VX;
         let startX = globalStartTime * BALL_VX;
-        
-        if (startX < firstNoteX) {
-            steps.push({ 
-                x: startX, 
-                y: (canvas.height * 0.3 + baseOffset), 
-                w: firstNoteX - startX + 10, 
-                isNote: false, active: 0 
-            });
+        let startY = (canvas.height * 0.3 + baseOffset);
+
+        // 如果第一個音符很晚，補一段起始平台
+        if (rawNotes[0].time > globalStartTime) {
+            steps.push({ x: startX, y: startY, w: (rawNotes[0].time - globalStartTime) * BALL_VX + 10, isNote: false, active: 0 });
         }
 
         rawNotes.forEach((n, i) => {
             let x = n.time * BALL_VX;
-            let y = (canvas.height * 0.3 + baseOffset) + (i * 18);
+            let y = startY + (i * 18);
             let w = Math.max(n.duration * BALL_VX, 45);
             
+            // 強制橋接所有空隙
             if (steps.length > 0) {
                 let prev = steps[steps.length - 1];
                 let gap = x - (prev.x + prev.w);
-                if (gap > 1) prev.w += gap + 2; 
+                if (gap > 0) prev.w += gap + 5; 
             }
             steps.push({ x, y, w, freq: 440*Math.pow(2,(n.midi-69)/12), isNote: true, active: 0 });
         });
@@ -129,8 +123,8 @@ async function enterScene() {
         const img = new Image(); img.src = URL.createObjectURL(gFiles[i]);
         await new Promise(r => img.onload = r);
         const t = tracks[i % tracks.length];
-        const s = t.steps[Math.floor(Math.random() * (t.steps.length-1)) + 1];
-        gallery.push({ img, x: s.x + 80, y: s.y - 180, w: 150, h: 150 * (img.height/img.width), rot: (Math.random()-0.5)*0.1 });
+        const s = t.steps[Math.floor(Math.random() * (t.steps.length-1))];
+        gallery.push({ img, x: s.x + 100, y: s.y - 180, w: 150, h: 150 * (img.height/img.width), rot: (Math.random()-0.5)*0.1 });
     }
 
     document.getElementById('setupPanel').style.display = 'none';
@@ -148,10 +142,7 @@ function initStars() {
 function startApp() {
     if (audioCtx.state === 'suspended') audioCtx.resume();
     isBallMoving = true;
-    tracks.forEach(t => { 
-        t.ball.vy = -5; 
-        if(t.steps[0].isNote) hitStep(t.steps[0]); 
-    });
+    tracks.forEach(t => { t.ball.vy = -5; if(t.steps[0].isNote) hitStep(t.steps[0]); });
     document.getElementById('uiPanel').classList.add('collapsed');
 }
 
@@ -164,16 +155,17 @@ function loop() {
             let prevY = b.y;
             b.vy += GRAVITY * dt; b.x += b.vx * dt; b.y += b.vy * dt;
             
-            let currentPathY = t.steps[t.cur].y;
-            if (b.y > currentPathY + 120) { b.y = currentPathY - BALL_R; b.vy = 0; }
+            // 安全高度修正：防止任何原因導致的墜落
+            let s = t.steps[t.cur];
+            if (b.y > s.y + 50) { b.y = s.y - BALL_R; b.vy = 0; }
 
-            for (let i = t.cur; i < Math.min(t.cur + 8, t.steps.length); i++) {
-                let s = t.steps[i];
-                if (b.x >= s.x && b.x <= s.x + s.w && prevY + BALL_R <= s.y + 12 && b.y + BALL_R >= s.y) {
-                    b.y = s.y - BALL_R; 
+            for (let i = t.cur; i < Math.min(t.cur + 10, t.steps.length); i++) {
+                let step = t.steps[i];
+                if (b.x >= step.x && b.x <= step.x + step.w && prevY + BALL_R <= step.y + 15 && b.y + BALL_R >= step.y) {
+                    b.y = step.y - BALL_R; 
                     b.vy = BOUNCE_UP;
                     t.cur = i;
-                    if(!s.active && s.isNote) hitStep(s);
+                    if(!step.active && step.isNote) hitStep(step);
                     break;
                 }
             }
@@ -181,7 +173,7 @@ function loop() {
         const mb = tracks[0].ball;
         camX += (mb.x - canvas.width * 0.22 - camX) * 0.1;
         camY += (mb.y - canvas.height * 0.45 - camY) * 0.05;
-        if (mb.x > tracks[0].steps[tracks[0].steps.length-1].x + 1200) isBallMoving = false;
+        if (mb.x > tracks[0].steps[tracks[0].steps.length-1].x + 1500) isBallMoving = false;
     }
     draw();
     requestAnimationFrame(loop);
