@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AI 木琴階梯機 - 跨裝置精準版</title>
+    <title>AI 木琴階梯機 - 絕不漏音版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --panel: rgba(15, 23, 42, 0.98); }
@@ -26,13 +26,13 @@
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="text-align:center; margin:0 0 15px 0; font-size: 20px;">🎹 跨裝置穩定版</h2>
+        <h2 style="text-align:center; margin:0 0 15px 0; font-size: 20px;">🎹 絕不漏音穩定版</h2>
         <div class="section-title">1. MIDI 軌道 (Mario 預載)</div>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleMidiUpload(this)">
         <div id="trackContainer" class="track-list">讀取中...</div>
         <div class="section-title">2. 結束留言</div>
-        <input type="text" id="msgInit" value="Great Performance!">
-        <button id="entryBtn" class="btn" onclick="enterScene()" disabled>準備表演</button>
+        <input type="text" id="msgInit" value="Perfect Rhythm!">
+        <button id="entryBtn" class="btn" onclick="enterScene()" disabled>進入表演</button>
     </div>
 </div>
 
@@ -49,14 +49,14 @@ const ctx = canvas.getContext('2d', { alpha: false });
 let audioCtx, tracks = [], isRunning = false, isBallMoving = false, fullMidi;
 let camX = 0, camY = 0, recorder, chunks = [], audioDest, selectedTrackIdx = -1;
 let isFinishing = false, isRecording = false, currentMsg = "";
-let lastTime = 0; // 用於計算 Delta Time
+let lastTime = 0;
 
 const cornerImg = new Image(); cornerImg.src = 'IMG_6604.png';
 
-// --- 物理常數 (以每秒為單位計算) ---
-const GRAVITY = 1800;      // 像素/秒^2
-const BALL_VX = 320;       // 像素/秒 (直接對應 MIDI 時間縮放)
-const BOUNCE_UP = -150;    // 向上初速
+// 物理參數 (加重型)
+const GRAVITY = 2200;      // 進一步增加重力使球更貼地
+const BALL_VX = 350;       // 稍微提高速度
+const BOUNCE_UP = -80;     // 極輕微彈跳，幾乎貼著走
 const STEP_Y_GAP = 15;     
 const BALL_R = 10;
 
@@ -69,14 +69,14 @@ window.addEventListener('load', async () => {
     } catch (e) { document.getElementById('trackContainer').innerText = "請手動上傳 MIDI"; }
 });
 
-function playXylophoneTone(freq, destination, startTime = 0) {
-    const now = startTime || audioCtx.currentTime;
+function playXylophoneTone(freq, destination) {
+    const now = audioCtx.currentTime;
     const osc = audioCtx.createOscillator();
     const gain = audioCtx.createGain();
     osc.type = 'triangle';
     osc.frequency.setValueAtTime(freq, now);
     gain.gain.setValueAtTime(0, now);
-    gain.gain.linearRampToValueAtTime(0.2, now + 0.01);
+    gain.gain.linearRampToValueAtTime(0.25, now + 0.01);
     gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
     osc.connect(gain); gain.connect(destination);
     osc.start(now); osc.stop(now + 0.4);
@@ -125,7 +125,7 @@ function buildSteps(track) {
         let w = n.duration * BALL_VX;
         if (i > 0) {
             let gap = x - (steps[i-1].x + steps[i-1].w);
-            if (gap > 5) steps[i-1].w += (gap - 1); 
+            if (gap > 2) steps[i-1].w += (gap - 1); 
         }
         currentY += STEP_Y_GAP;
         steps.push({ x, y: currentY, w, freq: 440*Math.pow(2,(n.midi-69)/12), active: 0 });
@@ -143,7 +143,6 @@ function toggleRecord() {
     if (isRecording) return;
     chunks = [];
     const stream = new MediaStream([...canvas.captureStream(30).getTracks(), ...audioDest.stream.getTracks()]);
-    // 手機建議使用 30FPS 錄製以維持節奏
     recorder = new MediaRecorder(stream, { mimeType: 'video/webm', videoBitsPerSecond: 2500000 });
     recorder.ondataavailable = e => chunks.push(e.data);
     recorder.onstop = saveVideo;
@@ -155,19 +154,20 @@ function toggleRecord() {
 function saveVideo() {
     const blob = new Blob(chunks, { type: 'video/webm' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = `perf_${Date.now()}.webm`; a.click();
+    a.download = `stable_perf_${Date.now()}.webm`; a.click();
     setTimeout(() => location.reload(), 500);
 }
 
 function loop(timestamp) {
-    let dt = (timestamp - lastTime) / 1000; // 轉為秒
-    if (dt > 0.1) dt = 0.1; // 防止跳轉過大
+    let dt = (timestamp - lastTime) / 1000;
+    if (dt > 0.05) dt = 0.05; // 限制最大步長，提升碰撞穩定性
     lastTime = timestamp;
 
     if (isRunning && isBallMoving && !isFinishing) {
         const t = tracks[0], b = t.ball;
         
-        // 使用 Delta Time 更新物理
+        let oldY = b.y; // 記錄上一幀位置
+
         b.vy += GRAVITY * dt;
         b.x += b.vx * dt;
         b.y += b.vy * dt;
@@ -177,9 +177,14 @@ function loop(timestamp) {
             if(isRecording) setTimeout(() => recorder.stop(), 3000);
         } else {
             let s = t.steps[t.cur];
+            // 升級版碰撞偵測：檢查掃描區域
             if (s && b.x >= s.x && b.x <= s.x + s.w) {
-                if (b.y + BALL_R >= s.y && b.y + BALL_R <= s.y + 20 && b.vy >= 0) {
-                    b.y = s.y - BALL_R;
+                // 判斷球是否穿過或到達音階高度
+                const ballBottom = b.y + BALL_R;
+                const prevBallBottom = oldY + BALL_R;
+                
+                if (prevBallBottom <= s.y + 5 && ballBottom >= s.y) {
+                    b.y = s.y - BALL_R; // 強制修正位置
                     b.vy = BOUNCE_UP;
                     if (!s.active) {
                         playXylophoneTone(s.freq, audioCtx.destination);
@@ -191,8 +196,8 @@ function loop(timestamp) {
             if (s && b.x > s.x + s.w) t.cur++;
         }
         
-        camX += (b.x - canvas.width/2 - camX) * 0.15;
-        camY += (b.y - canvas.height/2 - camY) * 0.15;
+        camX += (b.x - canvas.width/2 - camX) * 0.2;
+        camY += (b.y - canvas.height/2 - camY) * 0.2;
     }
 
     draw();
@@ -208,10 +213,9 @@ function draw() {
     
     if (tracks[0]) {
         for (let s of tracks[0].steps) {
-            // 只畫可見區域
             if(s.x > camX - 100 && s.x < camX + canvas.width + 100) {
                 ctx.fillStyle = s.active ? "#fff" : "rgba(59, 130, 246, 0.4)";
-                ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, 10, 5); ctx.fill();
+                ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, 12, 6); ctx.fill();
             }
         }
         if (!isFinishing) {
