@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>木琴工坊 - Mario Starry Night</title>
+    <title>木琴工坊 - 精準結束偵測版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --success: #10b981; }
@@ -32,18 +32,14 @@
 <div id="setupPanel">
     <div class="config-card">
         <h2 style="text-align:center; margin: 0 0 20px 0;">🍄 瑪利歐星空演奏</h2>
-        
-        <label>1. 選擇音軌 (預設: Mario Bros. Theme)</label>
+        <label>1. 選擇音軌 (預設: Mario Theme)</label>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleManualMidi(this)">
         <div id="trackContainer" class="track-list">讀取 MIDI 中...</div>
-
         <label>2. 上傳廊道相片</label>
         <input type="file" id="galleryFiles" multiple accept="image/*" onchange="previewImages(this)">
         <div id="photoPreview"></div>
-
         <label>3. 結尾訊息</label>
         <input type="text" id="msgInit" value="It's-a Me, Harmony!">
-
         <button id="entryBtn" class="primary-btn" onclick="enterScene()" disabled>進入關卡</button>
     </div>
 </div>
@@ -64,7 +60,6 @@ let isFinishing = false, isRecording = false, currentMsg = "";
 let lastTime = 0, isInitialSlide = true;
 
 const cornerImg = new Image(); cornerImg.src = 'IMG_6604.png';
-// 針對瑪利歐主題微調：增加一點速度感與微彈性
 const GRAVITY = 3600, BALL_VX = 400, BOUNCE_UP = -40, BALL_R = 12; 
 const NOTE_COLORS = ["#FF5252", "#FF4081", "#E040FB", "#7C4DFF", "#536DFE", "#448AFF", "#40C4FF", "#18FFFF", "#64FFDA", "#69F0AE", "#B2FF59", "#EEFF41"];
 
@@ -73,45 +68,32 @@ canvas.width = window.innerWidth; canvas.height = window.innerHeight;
 function initStars() {
     stars = [];
     for(let i=0; i<160; i++) {
-        stars.push({
-            x: Math.random() * canvas.width,
-            y: Math.random() * canvas.height,
-            size: Math.random() * 2,
-            opacity: Math.random(),
-            parallax: 0.1 + Math.random() * 0.2
-        });
+        stars.push({ x: Math.random() * canvas.width, y: Math.random() * canvas.height, size: Math.random() * 2, opacity: Math.random(), parallax: 0.1 + Math.random() * 0.2 });
     }
 }
 
 window.addEventListener('load', async () => {
     initStars();
     try {
-        // 載入預設的瑪利歐曲目
         const res = await fetch('Mario Bros. - Super Mario Bros. Theme.mid');
         if (res.ok) processMidiBuffer(await res.arrayBuffer());
-        else document.getElementById('trackContainer').innerText = "預設曲目載入失敗";
     } catch (e) { document.getElementById('trackContainer').innerText = "請手動載入 MIDI"; }
 });
 
-function handleManualMidi(input) {
-    if(input.files[0]) input.files[0].arrayBuffer().then(processMidiBuffer);
-}
+function handleManualMidi(input) { if(input.files[0]) input.files[0].arrayBuffer().then(processMidiBuffer); }
 
 function processMidiBuffer(buf) {
     const fullMidi = new Midi(buf);
-    const container = document.getElementById('trackContainer');
-    container.innerHTML = "";
+    const container = document.getElementById('trackContainer'); container.innerHTML = "";
     fullMidi.tracks.forEach((t, i) => {
         if(t.notes.length === 0) return;
         const item = document.createElement('div');
-        item.className = "track-item";
-        item.id = `track-${i}`;
+        item.className = "track-item"; item.id = `track-${i}`;
         item.innerHTML = `<strong>音軌 ${i+1}</strong> (${t.notes.length} 個音符)`;
         item.onclick = () => {
             selectedTrackData = t;
             document.querySelectorAll('.track-item').forEach(el => el.classList.remove('active'));
-            item.classList.add('active');
-            document.getElementById('entryBtn').disabled = false;
+            item.classList.add('active'); document.getElementById('entryBtn').disabled = false;
         };
         container.appendChild(item);
     });
@@ -152,13 +134,11 @@ function buildSteps(track) {
         let x = n.time * BALL_VX;
         let y = startY + (i * 18);
         let w = Math.max(n.duration * BALL_VX, 45);
-        // 軌道自動接合優化
         if (i > 0) {
             let prev = steps[i-1];
             let gap = x - (prev.x + prev.w);
             if (gap > 0) prev.w += gap + 3; 
         }
-        // 處理和弦錯開
         if (i > 0 && Math.abs(x - steps[i-1].x) < 5) x += 15;
         steps.push({ x, y, w, freq: 440*Math.pow(2,(n.midi-69)/12), color: NOTE_COLORS[n.midi % 12], active: 0 });
     });
@@ -183,7 +163,16 @@ function loop(timestamp) {
                         b.y = s.y - BALL_R; b.vy = BOUNCE_UP; t.cur = i; hitStep(s); break;
                     }
                 }
-                if (t.cur >= t.steps.length - 1 && b.y > t.steps[t.steps.length-1].y + 300) triggerEndSequence();
+                
+                // 💡 關鍵優化：精準結束偵測
+                // 1. 檢查球是否已經超過最後一個音板的 X 軸
+                const lastStep = t.steps[t.steps.length - 1];
+                if (b.x > lastStep.x + lastStep.w) {
+                    // 2. 當球掉落超過最後一個音板高度 350 像素時，觸發 Ending
+                    if (b.y > lastStep.y + 350) {
+                        triggerEndSequence();
+                    }
+                }
             }
             camX += (b.x - canvas.width * 0.25 - camX) * 0.1;
             camY += (b.y - canvas.height * 0.55 - camY) * 0.1;
@@ -206,24 +195,19 @@ function hitStep(s) {
 
 function draw() {
     ctx.fillStyle = "#020617"; ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
-    // 背景粒子 (視差效果)
     stars.forEach(s => {
         let x = (s.x - camX * s.parallax) % canvas.width; if (x < 0) x += canvas.width;
         let y = (s.y - camY * s.parallax) % canvas.height; if (y < 0) y += canvas.height;
         ctx.fillStyle = `rgba(255, 255, 255, ${s.opacity})`;
         ctx.beginPath(); ctx.arc(x, y, s.size, 0, Math.PI*2); ctx.fill();
     });
-
     ctx.save();
     ctx.translate(canvas.width/2, canvas.height/2); ctx.scale(0.85, 0.85); ctx.translate(-canvas.width/2, -canvas.height/2);
     ctx.translate(-Math.round(camX), -Math.round(camY));
-    
     gallery.forEach(p => {
         ctx.fillStyle = "rgba(255,255,255,0.15)"; ctx.fillRect(p.x - 4, p.y - 4, p.w + 8, p.h + 8);
         ctx.drawImage(p.img, p.x, p.y, p.w, p.h);
     });
-
     if (tracks[0]) {
         tracks[0].steps.forEach(s => {
             ctx.fillStyle = s.active ? "#fff" : s.color + "AA";
@@ -234,7 +218,6 @@ function draw() {
         }
     }
     ctx.restore();
-
     if (isFinishing) {
         ctx.fillStyle = "rgba(0,0,0,0.96)"; ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.fillStyle = "#fff"; ctx.font = "bold 40px sans-serif"; ctx.textAlign = "center";
@@ -258,10 +241,12 @@ function handleRecording() {
 }
 
 function triggerEndSequence() {
+    if (isFinishing) return;
     isFinishing = true; isBallMoving = false;
     let timer = 0;
     const holdVideo = () => {
         draw(); timer++;
+        // 延遲錄製 3 秒以確保結尾訊息與簽名圖檔能被錄進去
         if (timer < 180) requestAnimationFrame(holdVideo);
         else { if(recorder && recorder.state !== 'inactive') recorder.stop(); else location.reload(); }
     };
@@ -271,7 +256,7 @@ function triggerEndSequence() {
 function saveVideo() {
     const blob = new Blob(chunks, { type: 'video/mp4' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = `mario_starry_${Date.now()}.mp4`; a.click();
+    a.download = `mario_starry_end_${Date.now()}.mp4`; a.click();
     setTimeout(() => location.reload(), 2000);
 }
 </script>
