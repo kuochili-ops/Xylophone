@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>木琴工坊 - Ending Fix Pro</title>
+    <title>木琴工坊 - Final Precision</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; }
@@ -29,7 +29,7 @@
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="text-align:center;">🎯 Ending 錄製強化版</h2>
+        <h2 style="text-align:center;">🎬 完美同步錄製版</h2>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleMidiUpload(this)">
         <div id="trackContainer" class="track-list">讀取預設中...</div>
         <input type="file" id="galleryFiles" multiple accept="image/*" onchange="previewImages(this)">
@@ -49,24 +49,17 @@
 <script>
 const canvas = document.getElementById('stage');
 const ctx = canvas.getContext('2d', { alpha: false });
-let audioCtx, tracks = [], isRunning = false, isBallMoving = false, fullMidi, gallery = [];
+let audioCtx, tracks = [], isRunning = false, isBallMoving = false, gallery = [];
 let camX = 0, camY = 0, recorder, chunks = [], audioDest, selectedTrackIdx = -1;
 let isFinishing = false, isRecording = false, currentMsg = "";
 let lastTime = 0, isInitialSlide = true;
-let zoomScale = 0.8;
+let zoomScale = 0.82;
 
 const cornerImg = new Image(); cornerImg.src = 'IMG_6604.png';
 const GRAVITY = 3500, BALL_VX = 360, BOUNCE_UP = -30, BALL_R = 12;
 const NOTE_COLORS = ["#FF5252", "#FF4081", "#E040FB", "#7C4DFF", "#536DFE", "#448AFF", "#40C4FF", "#18FFFF", "#64FFDA", "#69F0AE", "#B2FF59", "#EEFF41"];
 
 canvas.width = window.innerWidth; canvas.height = window.innerHeight;
-
-window.addEventListener('load', async () => {
-    try {
-        const res = await fetch('Mario Bros. - Super Mario Bros. Theme.mid');
-        if (res.ok) parseMidi(await res.arrayBuffer());
-    } catch (e) { document.getElementById('trackContainer').innerText = "請上傳 MIDI"; }
-});
 
 function previewImages(input) {
     const container = document.getElementById('photoPreview'); container.innerHTML = "";
@@ -79,40 +72,39 @@ function previewImages(input) {
 
 function handleMidiUpload(input) {
     if(!input.files[0]) return;
-    input.files[0].arrayBuffer().then(parseMidi);
-}
-
-function parseMidi(buf) {
-    fullMidi = new Midi(buf);
-    const container = document.getElementById('trackContainer'); container.innerHTML = "";
-    fullMidi.tracks.forEach((t, i) => {
-        if(t.notes.length === 0) return;
-        const item = document.createElement('div'); item.className = "track-item";
-        item.innerHTML = `Track ${i+1} (${t.notes.length} notes)`;
-        item.onclick = () => {
-            selectedTrackIdx = i;
-            document.querySelectorAll('.track-item').forEach(e => e.classList.remove('active'));
-            item.classList.add('active');
-            document.getElementById('entryBtn').disabled = false;
-            if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        };
-        container.appendChild(item);
+    input.files[0].arrayBuffer().then(buf => {
+        const fullMidi = new Midi(buf);
+        const container = document.getElementById('trackContainer'); container.innerHTML = "";
+        fullMidi.tracks.forEach((t, i) => {
+            if(t.notes.length === 0) return;
+            const item = document.createElement('div'); item.className = "track-item";
+            item.innerHTML = `Track ${i+1} (${t.notes.length})`;
+            item.onclick = () => {
+                selectedTrackIdx = i;
+                window.selectedTrackData = t;
+                document.querySelectorAll('.track-item').forEach(e => e.classList.remove('active'));
+                item.classList.add('active');
+                document.getElementById('entryBtn').disabled = false;
+                if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            };
+            container.appendChild(item);
+        });
     });
 }
 
 async function enterScene() {
     currentMsg = document.getElementById('msgInit').value;
-    buildSteps(fullMidi.tracks[selectedTrackIdx]);
+    buildSteps(window.selectedTrackData);
     
     const gFiles = document.getElementById('galleryFiles').files;
     for (let i = 0; i < gFiles.length; i++) {
         const img = new Image(); img.src = URL.createObjectURL(gFiles[i]);
         await new Promise(r => img.onload = r);
-        const dispW = 320;
+        const dispW = 300;
         const dispH = dispW * (img.height / img.width);
-        // 照片位置：調整為更靠近音階 (s.y - dispH - 120)
+        // 照片再次下移，距離音階僅 60px (原本是 120px)
         const s = tracks[0].steps[Math.floor((i/gFiles.length)*tracks[0].steps.length)];
-        gallery.push({ img, x: s.x + 80, y: s.y - dispH - 120, w: dispW, h: dispH });
+        gallery.push({ img, x: s.x + 80, y: s.y - dispH - 60, w: dispW, h: dispH });
     }
 
     document.getElementById('setupPanel').style.display = 'none';
@@ -145,7 +137,6 @@ function togglePlay() {
 function handleRecording() {
     if (!isRecording) {
         chunks = [];
-        // 增加錄製幀率穩定性
         const stream = canvas.captureStream(30);
         const combined = new MediaStream([...stream.getTracks(), ...audioDest.stream.getTracks()]);
         recorder = new MediaRecorder(combined, { mimeType: 'video/webm;codecs=vp9', videoBitsPerSecond: 8000000 });
@@ -153,45 +144,43 @@ function handleRecording() {
         recorder.onstop = saveVideo;
         recorder.start(100);
         isRecording = true;
-        document.getElementById('recBtn').classList.add('is-recording');
         document.getElementById('recBtn').innerText = "STOP";
+        document.getElementById('recBtn').classList.add('is-recording');
     } else {
         triggerEndSequence();
     }
 }
 
 function triggerEndSequence() {
-    // 進入結束流程：停止球移動、隱藏 UI
     isFinishing = true;
     isBallMoving = false;
     document.getElementById('recordUI').style.display = 'none';
     
-    // 核心修復：強制在 Ending 畫面停留 4 秒，並維持繪製循環
-    let waitFrames = 120; // 30fps * 4s
-    const processEnding = () => {
-        if(waitFrames > 0) {
-            draw(); // 強制重繪
-            waitFrames--;
-            requestAnimationFrame(processEnding);
+    // 強制延長錄影時間：在結束畫面繪製後，等待 5 秒才真正呼叫 recorder.stop()
+    // 這 5 秒期間，繪製循環會持續運作以填充錄影數據
+    let timer = 0;
+    const holdVideo = () => {
+        draw(); 
+        timer++;
+        if (timer < 150) { // 大約 5 秒 (30fps)
+            requestAnimationFrame(holdVideo);
         } else {
-            // 真正停止錄影
             if(recorder && recorder.state !== 'inactive') {
-                recorder.stop();
+                recorder.requestData(); // 再次請求數據確保緩衝清空
+                setTimeout(() => recorder.stop(), 500);
             }
         }
     };
-    processEnding();
+    holdVideo();
 }
 
 function saveVideo() {
-    // 將 Blob 標記為 mp4 下載
     const blob = new Blob(chunks, { type: 'video/mp4' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `music_capture_${Date.now()}.mp4`;
+    a.download = `music_final_${Date.now()}.mp4`;
     a.click();
-    // 延遲一點再重整，給下載留時間
     setTimeout(() => location.reload(), 2000);
 }
 
@@ -221,7 +210,6 @@ function loop(timestamp) {
                     }
                 }
             }
-            // 鏡頭稍微往上提，讓照片跟音階距離更協調
             camX += (b.x - canvas.width * 0.25 - camX) * 0.1;
             camY += (b.y - canvas.height * 0.55 - camY) * 0.1;
         }
@@ -247,18 +235,15 @@ function draw() {
     ctx.fillStyle = "#020617"; ctx.fillRect(0, 0, canvas.width, canvas.height);
     
     ctx.save();
-    // 全域縮放，視野更寬闊
     ctx.translate(canvas.width/2, canvas.height/2);
     ctx.scale(zoomScale, zoomScale);
     ctx.translate(-canvas.width/2, -canvas.height/2);
-    
     ctx.translate(-Math.round(camX), -Math.round(camY));
     
-    // 繪製照片
     gallery.forEach(p => {
-        if(p.x > camX - 1000 && p.x < camX + canvas.width + 1000) {
-            ctx.fillStyle = "rgba(255,255,255,0.1)";
-            ctx.fillRect(p.x - 6, p.y - 6, p.w + 12, p.h + 12);
+        if(p.x > camX - 1200 && p.x < camX + canvas.width + 1200) {
+            ctx.fillStyle = "rgba(255,255,255,0.12)";
+            ctx.fillRect(p.x - 5, p.y - 5, p.w + 10, p.h + 10);
             ctx.drawImage(p.img, p.x, p.y, p.w, p.h);
         }
     });
@@ -273,26 +258,21 @@ function draw() {
         if (!isFinishing) {
             ctx.fillStyle = "#ef4444";
             ctx.beginPath(); ctx.arc(tracks[0].ball.x, tracks[0].ball.y, BALL_R, 0, Math.PI*2); ctx.fill();
-            // 球的光影點綴
-            ctx.fillStyle = "rgba(255,255,255,0.3)";
-            ctx.beginPath(); ctx.arc(tracks[0].ball.x - 4, tracks[0].ball.y - 4, 3, 0, Math.PI*2); ctx.fill();
         }
     }
     ctx.restore();
 
-    // Ending 繪製：確保它繪製在最終渲染的畫布上
     if (isFinishing) {
-        ctx.fillStyle = "rgba(0,0,0,0.94)"; 
+        ctx.fillStyle = "rgba(0,0,0,0.95)"; 
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-        
         ctx.fillStyle = "#fff"; 
-        ctx.font = "bold 36px sans-serif"; 
+        ctx.font = "bold 38px sans-serif"; 
         ctx.textAlign = "center";
         ctx.fillText(currentMsg, canvas.width/2, canvas.height/2);
         
         if (cornerImg.complete) {
-            const size = 120;
-            ctx.drawImage(cornerImg, canvas.width - size - 40, canvas.height - size - 60, size, size);
+            const size = 130;
+            ctx.drawImage(cornerImg, canvas.width - size - 40, canvas.height - size - 80, size, size);
         }
     }
 }
