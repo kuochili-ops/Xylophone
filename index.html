@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴工坊 - 穩定試聽與極速優化</title>
+    <title>AI 木琴工坊 - 慢速展演版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --panel: rgba(15, 23, 42, 0.98); }
@@ -16,7 +16,7 @@
         .track-item.active { background: var(--accent); border-color: #fff; box-shadow: 0 0 10px rgba(59, 130, 246, 0.5); }
         .preview-tag { font-size: 10px; background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px; }
         .record-ui { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; display: none; gap: 12px; background: var(--panel); padding: 12px 28px; border-radius: 50px; border: 1px solid #3b82f6; }
-        .ctrl-btn { border: none; padding: 10px 22px; border-radius: 20px; cursor: pointer; font-weight: bold; }
+        .ctrl-btn { border: none; padding: 10px 22px; border-radius: 20px; cursor: pointer; font-weight: bold; transition: 0.2s; }
         #playBtn { background: #10b981; color: white; }
         #recBtn { background: #ef4444; color: white; }
         input { width: 100%; padding: 12px; margin-bottom: 10px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: #fff; box-sizing: border-box; }
@@ -27,14 +27,14 @@
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="margin:0;">🎵 穩定試聽與速度優化</h2>
+        <h2 style="margin:0;">🎭 慢速展演版 (極致流暢)</h2>
         <div class="section-title">1. MIDI 軌道 (點擊切換試聽)</div>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleMidiUpload(this)">
         <div id="trackContainer" class="track-list">讀取音樂中...</div>
         <div class="section-title">2. 照片廊道 (多選)</div>
         <input type="file" id="galleryFiles" multiple accept="image/*">
         <div class="section-title">3. 結束留言</div>
-        <input type="text" id="msgInit" value="Splendid Performance! 終">
+        <input type="text" id="msgInit" value="A Timeless Performance. 終">
         <button id="entryBtn" class="btn" onclick="enterScene()" disabled>確認並進入</button>
     </div>
 </div>
@@ -47,13 +47,13 @@
 <canvas id="stage"></canvas>
 
 <script>
-// 物理參數再度乘以 0.9 (累計 0.5.2 * 0.9 * 0.9 = 4.212)
+// 物理參數再度乘以 0.8 (累計 VX 3.37, TS 207)
 const CONFIG = { 
-    GRAVITY: 1.0,        
-    BALL_VX: 4.21,       
-    BOUNCE_UP: -0.55, 
+    GRAVITY: 0.8,        // 降低重力感，適合慢速移動
+    BALL_VX: 3.37,       
+    BOUNCE_UP: -0.5, 
     STEP_Y_GAP: 15, 
-    TIME_SCALE: 259,     
+    TIME_SCALE: 207,     
     BALL_R: 10 
 };
 
@@ -63,9 +63,8 @@ let audioCtx, tracks = [], isRunning = false, isBallMoving = false, fullMidi, ga
 let camX = 0, camY = 0, recorder, chunks = [], audioDest, selectedTrackIdx = -1;
 let isFinishing = false, finishAlpha = 0, isRecording = false, currentMsg = "";
 let saveCounter = 0;
-
-// 試聽管理系統
 let activePreviewOscillators = [];
+const cornerImg = new Image(); cornerImg.src = 'IMG_6604.png';
 
 canvas.width = window.innerWidth; canvas.height = window.innerHeight;
 
@@ -92,10 +91,10 @@ function parseMidi(buf) {
         if(t.notes.length < 2) return;
         const item = document.createElement('div');
         item.className = "track-item";
-        item.innerHTML = `<span>軌道 ${i+1} (${t.notes.length})</span><span class="preview-tag">試聽中...</span>`;
+        item.innerHTML = `<span>軌道 ${i+1} (${t.notes.length} 音符)</span><span class="preview-tag">試聽</span>`;
         item.onclick = async () => {
             await ensureAudioStarted();
-            stopAllPreviews(); // 先停止所有舊音訊
+            stopAllPreviews();
             selectedTrackIdx = i;
             document.querySelectorAll('.track-item').forEach(e => e.classList.remove('active'));
             item.classList.add('active');
@@ -108,17 +107,14 @@ function parseMidi(buf) {
 
 function stopAllPreviews() {
     activePreviewOscillators.forEach(obj => {
-        try {
-            obj.osc.stop();
-            obj.osc.disconnect();
-        } catch(e){}
+        try { obj.osc.stop(); obj.osc.disconnect(); } catch(e){}
     });
     activePreviewOscillators = [];
 }
 
 function previewTrack(track) {
     const now = audioCtx.currentTime;
-    const previewNotes = track.notes.slice(0, 20); // 增加試聽長度至 20 音符
+    const previewNotes = track.notes.slice(0, 20);
     previewNotes.forEach(n => {
         const osc = audioCtx.createOscillator();
         const g = audioCtx.createGain();
@@ -196,7 +192,7 @@ function startRecording() {
     recorder.onstop = () => {
         const blob = new Blob(chunks, { type: 'video/webm' });
         const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-        a.download = `performance_${Date.now()}.webm`; a.click();
+        a.download = `music_show_${Date.now()}.webm`; a.click();
         setTimeout(() => location.reload(), 1000);
     };
     recorder.start(100);
@@ -217,9 +213,9 @@ function update() {
             const g = audioCtx.createGain();
             osc.type = 'triangle'; osc.frequency.setValueAtTime(s.freq, audioCtx.currentTime);
             g.gain.setTargetAtTime(0.3, audioCtx.currentTime, 0.01);
-            g.gain.setTargetAtTime(0, audioCtx.currentTime + 0.1, 0.1);
+            g.gain.setTargetAtTime(0, audioCtx.currentTime + 0.12, 0.1);
             osc.connect(g); g.connect(audioCtx.destination); g.connect(audioDest);
-            osc.start(); osc.stop(audioCtx.currentTime + 0.5);
+            osc.start(); osc.stop(audioCtx.currentTime + 0.6);
             s.active = 1; s.flash = 1.0;
         }
     }
