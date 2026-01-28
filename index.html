@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>木琴工坊 - 密集階梯版</title>
+    <title>木琴工坊 - 密集階梯最終版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --success: #10b981; }
@@ -62,7 +62,7 @@ canvas.width = window.innerWidth; canvas.height = window.innerHeight;
 
 function initStars() {
     stars = [];
-    for(let i=0; i<80; i++) stars.push({ x: Math.random()*canvas.width, y: Math.random()*canvas.height, size: Math.random()*1, opacity: Math.random(), parallax: 0.08 });
+    for(let i=0; i<60; i++) stars.push({ x: Math.random()*canvas.width, y: Math.random()*canvas.height, size: Math.random()*1, opacity: Math.random(), parallax: 0.08 });
 }
 
 window.addEventListener('load', async () => {
@@ -127,7 +127,7 @@ async function enterScene() {
         await new Promise(r => img.onload = r);
         const s = tracks[0].steps[Math.floor((i/gFiles.length)*tracks[0].steps.length)];
         const dispW = 280; const dispH = dispW * (img.height / img.width);
-        gallery.push({ img, x: s.x + 150, y: s.y - dispH - 120, w: dispW, h: dispH });
+        gallery.push({ img, x: s.x + 150, y: s.y - dispH - 120, w: dispW, h: dispH, used: false });
     }
     document.getElementById('setupPanel').style.display = 'none';
     document.getElementById('recordUI').style.display = 'flex';
@@ -141,19 +141,17 @@ function buildSteps(track) {
     
     rawNotes.forEach((n, i) => {
         let x = n.time * BALL_VX;
-        let y = startY + (i * 18); // 階梯式下移
+        let y = startY + (i * 18); 
         let w = Math.max(n.duration * BALL_VX, 45);
         
-        // 🛠️ 核心修改：橫向間距處理
+        // 核心修改：頭尾相接且間距在 8px 內
         if (i > 0) {
             let prev = steps[i-1];
             let endOfPrev = prev.x + prev.w;
-            // 如果目前音階起始大於前一個音階結束，強制縮短間距至球半徑以內 (8px)
             if (x > endOfPrev + 8) {
-                prev.w = x - prev.x - 5; // 讓前一個稍微伸長，保持頭尾相接感
+                prev.w = x - prev.x - 5; 
             }
         }
-        
         steps.push({ x, y, w, freq: 440*Math.pow(2,(n.midi-69)/12), color: NOTE_COLORS[n.midi % 12], active: 0 });
     });
     tracks = [{ steps, ball: { x: steps[0].x - 450, y: steps[0].y - BALL_R, vx: BALL_VX, vy: 0 }, cur: 0 }];
@@ -161,8 +159,9 @@ function buildSteps(track) {
 
 function loop() {
     if (isRunning) {
+        const dt = 1/24; // 對齊 24FPS
         if (isBallMoving && !isFinishing) {
-            const dt = 1/60; const t = tracks[0], b = t.ball;
+            const t = tracks[0], b = t.ball;
             let prevY = b.y;
             if (isInitialSlide) {
                 b.x += b.vx * dt;
@@ -177,8 +176,8 @@ function loop() {
                 }
                 if (b.x > t.steps[t.steps.length - 1].x + 500) triggerEndSequence();
             }
-            camX += (b.x - canvas.width * 0.20 - camX) * 0.1;
-            camY += (b.y - canvas.height * 0.55 - camY) * 0.1;
+            camX += (b.x - canvas.width * 0.20 - camX) * 0.12;
+            camY += (b.y - canvas.height * 0.55 - camY) * 0.12;
         }
         draw();
         requestAnimationFrame(loop);
@@ -214,10 +213,12 @@ function draw() {
     ctx.translate(-canvas.width/2, -canvas.height/2);
     ctx.translate(-Math.round(camX), -Math.round(camY));
     
-    gallery.forEach(p => {
-        if(p.x - camX < canvas.width + 500 && p.x - camX > -800) {
+    gallery = gallery.filter(p => {
+        if (p.x - camX < -1000) return false; // 自動釋放已過期照片
+        if(p.x - camX < canvas.width + 500) {
             ctx.drawImage(p.img, p.x, p.y, p.w, p.h);
         }
+        return true;
     });
     
     if (tracks[0]) {
@@ -249,7 +250,8 @@ function handleRecording() {
         chunks = [];
         const stream = canvas.captureStream(24);
         const combined = new MediaStream([...stream.getTracks(), ...audioDest.stream.getTracks()]);
-        recorder = new MediaRecorder(combined, { mimeType: 'video/webm;codecs=vp8', videoBitsPerSecond: 2500000 });
+        // 💡 鎖定 2.2Mbps 穩定畫質
+        recorder = new MediaRecorder(combined, { mimeType: 'video/webm;codecs=vp8', videoBitsPerSecond: 2200000 });
         recorder.ondataavailable = e => { if(e.data.size > 0) chunks.push(e.data); };
         recorder.onstop = saveVideo;
         recorder.start(1000); 
@@ -270,7 +272,7 @@ function triggerEndSequence() {
     const flusher = setInterval(() => {
         if (recorder && recorder.state === 'recording') recorder.requestData();
         count++;
-        if (count >= 6) { 
+        if (count >= 8) { // 延長至 4 秒確保穩定
             clearInterval(flusher);
             if (recorder && recorder.state !== 'inactive') recorder.stop();
         }
@@ -280,7 +282,7 @@ function triggerEndSequence() {
 function saveVideo() {
     const blob = new Blob(chunks, { type: 'video/webm' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = `mario_staircase_${Date.now()}.webm`; a.click();
+    a.download = `mario_staircase_final_${Date.now()}.webm`; a.click();
     setTimeout(() => location.reload(), 2000);
 }
 </script>
