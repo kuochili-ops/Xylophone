@@ -3,58 +3,44 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>木琴工坊 App - 密集三球版</title>
+    <title>木琴工坊 App - 平行起跑版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --success: #10b981; }
         body { margin: 0; background: #010409; color: #fff; font-family: -apple-system, sans-serif; overflow: hidden; touch-action: none; }
-        
-        /* 初始設定 */
         #setupPanel { position: fixed; inset: 0; background: #020617; z-index: 5000; padding: 20px; display: flex; flex-direction: column; align-items: center; overflow-y: auto; }
-        .config-card { background: rgba(15, 23, 42, 0.98); padding: 25px; border-radius: 24px; border: 1px solid #334155; width: 90%; max-width: 420px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-        
-        /* 收合控制面板 */
+        .config-card { background: rgba(15, 23, 42, 0.98); padding: 25px; border-radius: 24px; border: 1px solid #334155; width: 90%; max-width: 420px; }
         #uiPanel { position: fixed; bottom: 30px; right: 20px; z-index: 1000; display: none; flex-direction: column; align-items: flex-end; gap: 12px; }
-        .panel-content { background: rgba(15, 23, 42, 0.9); padding: 15px; border-radius: 20px; border: 1px solid #475569; display: flex; gap: 10px; backdrop-filter: blur(12px); transition: all 0.3s ease; }
+        .panel-content { background: rgba(15, 23, 42, 0.9); padding: 15px; border-radius: 20px; border: 1px solid #475569; display: flex; gap: 10px; backdrop-filter: blur(12px); transition: 0.3s; }
         #uiPanel.collapsed .panel-content { opacity: 0; transform: translateY(20px) scale(0.9); pointer-events: none; }
-        .toggle-btn { width: 55px; height: 55px; border-radius: 50%; background: #1e293b; border: 2px solid #475569; color: white; font-size: 24px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-        
-        .action-btn { padding: 12px 24px; border-radius: 12px; border: none; font-weight: bold; color: white; cursor: pointer; font-size: 15px; }
+        .toggle-btn { width: 55px; height: 55px; border-radius: 50%; background: #1e293b; border: 2px solid #475569; color: white; font-size: 24px; cursor: pointer; }
+        .action-btn { padding: 12px 24px; border-radius: 12px; border: none; font-weight: bold; color: white; cursor: pointer; }
         #startBtn { background: var(--success); }
-        #resetBtn { background: #475569; }
-
         #photoPreview { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 12px 0; }
-        .photo-thumb { aspect-ratio: 1; background: #1e293b; border-radius: 6px; overflow: hidden; border: 1px solid #334155; }
+        .photo-thumb { aspect-ratio: 1; background: #1e293b; border-radius: 6px; overflow: hidden; }
         .photo-thumb img { width: 100%; height: 100%; object-fit: cover; }
-        
         input[type="file"], input[type="text"] { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #334155; background: #0f172a; color: #fff; margin-bottom: 12px; box-sizing: border-box; }
-        .primary-btn { width: 100%; padding: 16px; border-radius: 14px; background: var(--accent); color: white; border: none; font-weight: bold; font-size: 16px; }
+        .primary-btn { width: 100%; padding: 16px; border-radius: 14px; background: var(--accent); color: white; border: none; font-weight: bold; }
     </style>
 </head>
 <body>
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="text-align:center; margin-top:0; color:var(--accent);">🎹 木琴工坊 App</h2>
-        <label style="font-size:12px; color:#64748b;">音軌來源 (MIDI)</label>
+        <h2 style="text-align:center; margin-top:0;">🎹 平行起跑模式</h2>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleMidi(this)">
-        <div id="trackInfo" style="font-size:12px; color:#94a3b8; margin-bottom:12px;">載入後將自動分配三顆球...</div>
-        
-        <label style="font-size:12px; color:#64748b;">照片廊道 (可多選)</label>
+        <div id="trackInfo" style="font-size:12px; color:#94a3b8; margin:10px 0;">載入 MIDI 以開始...</div>
         <input type="file" id="galleryFiles" multiple accept="image/*" onchange="previewImages(this)">
         <div id="photoPreview"></div>
-        
-        <label style="font-size:12px; color:#64748b;">結尾致謝訊息</label>
-        <input type="text" id="msgInit" value="Thanks for Watching!">
-        
-        <button id="entryBtn" class="primary-btn" onclick="enterScene()" disabled>準備就緒</button>
+        <input type="text" id="msgInit" value="Beautiful Harmony.">
+        <button id="entryBtn" class="primary-btn" onclick="enterScene()" disabled>準備進入</button>
     </div>
 </div>
 
 <div id="uiPanel">
     <div class="panel-content">
         <button id="startBtn" class="action-btn" onclick="startApp()">開始播放</button>
-        <button id="resetBtn" class="action-btn" onclick="location.reload()">重新設定</button>
+        <button class="action-btn" style="background:#475569;" onclick="location.reload()">重新設定</button>
     </div>
     <button class="toggle-btn" onclick="document.getElementById('uiPanel').classList.toggle('collapsed')">⚙️</button>
 </div>
@@ -69,7 +55,7 @@ let camX = 0, camY = 0, midiData = null, currentMsg = "";
 const cornerImg = new Image(); cornerImg.src = 'IMG_6604.png';
 
 const GRAVITY = 3600, BALL_VX = 400, BOUNCE_UP = -40, BALL_R = 12;
-const TRACK_COLORS = ["#ff4757", "#54a0ff", "#2ed573"]; // 紅、藍、綠
+const TRACK_COLORS = ["#ff4757", "#54a0ff", "#2ed573"]; 
 
 canvas.width = window.innerWidth; canvas.height = window.innerHeight;
 
@@ -77,7 +63,7 @@ function handleMidi(input) {
     if(input.files[0]) {
         input.files[0].arrayBuffer().then(buf => {
             midiData = new Midi(buf);
-            document.getElementById('trackInfo').innerText = "MIDI 解析成功，已選取音符最密集的 3 軌。";
+            document.getElementById('trackInfo').innerText = "已選取音符最多的 3 軌。";
             document.getElementById('entryBtn').disabled = false;
         });
     }
@@ -96,16 +82,15 @@ async function enterScene() {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     currentMsg = document.getElementById('msgInit').value;
     
-    // 三軌邏輯與階梯算法
     const sorted = [...midiData.tracks].sort((a,b) => b.notes.length - a.notes.length).slice(0, 3);
     sorted.forEach((track, idx) => {
         const steps = [];
-        const startY = canvas.height * 0.3 + (idx * 200); // 垂直拉開
+        const baseOffset = idx * 220; // 軌道間的基礎距離
         const rawNotes = track.notes.sort((a,b) => a.time - b.time);
         
         rawNotes.forEach((n, i) => {
             let x = n.time * BALL_VX;
-            let y = startY + (i * 18); // 經典密集階梯設定
+            let y = (canvas.height * 0.25 + baseOffset) + (i * 18); // 密集階梯
             let w = Math.max(n.duration * BALL_VX, 45);
             if (i > 0) {
                 let prev = steps[i-1];
@@ -113,7 +98,19 @@ async function enterScene() {
             }
             steps.push({ x, y, w, freq: 440*Math.pow(2,(n.midi-69)/12), active: 0 });
         });
-        tracks.push({ steps, ball: { x: steps[0].x - 450, y: steps[0].y - BALL_R, vx: BALL_VX, vy: 0, color: TRACK_COLORS[idx] }, cur: 0 });
+        
+        // 關鍵：平行推入起點設定
+        tracks.push({ 
+            steps, 
+            ball: { 
+                x: steps[0].x - 450, // 每個球從自己音軌的第一個音板前 450px 出發
+                y: steps[0].y - BALL_R, 
+                vx: BALL_VX, vy: 0, 
+                color: TRACK_COLORS[idx],
+                isSliding: true 
+            }, 
+            cur: 0 
+        });
     });
 
     const gFiles = document.getElementById('galleryFiles').files;
@@ -122,7 +119,7 @@ async function enterScene() {
         await new Promise(r => img.onload = r);
         const t = tracks[i % tracks.length];
         const s = t.steps[Math.floor(Math.random() * t.steps.length)];
-        gallery.push({ img, x: s.x + 120, y: s.y - 200, w: 160, h: 160 * (img.height/img.width), rot: (Math.random()-0.5)*0.15 });
+        gallery.push({ img, x: s.x + 100, y: s.y - 180, w: 170, h: 170 * (img.height/img.width), rot: (Math.random()-0.5)*0.1 });
     }
 
     document.getElementById('setupPanel').style.display = 'none';
@@ -139,7 +136,7 @@ function initStars() {
 function startApp() {
     if (audioCtx.state === 'suspended') audioCtx.resume();
     isBallMoving = true;
-    document.getElementById('uiPanel').classList.add('collapsed'); // 按下開始自動縮小面板
+    document.getElementById('uiPanel').classList.add('collapsed');
 }
 
 function loop() {
@@ -149,16 +146,28 @@ function loop() {
         tracks.forEach(t => {
             const b = t.ball;
             let prevY = b.y;
-            b.vy += GRAVITY * dt; b.x += b.vx * dt; b.y += b.vy * dt;
-            for (let i = t.cur; i < Math.min(t.cur + 5, t.steps.length); i++) {
-                let s = t.steps[i];
-                if (b.x >= s.x && b.x <= s.x + s.w && prevY + BALL_R <= s.y + 10 && b.y + BALL_R >= s.y) {
-                    b.y = s.y - BALL_R; b.vy = BOUNCE_UP; t.cur = i;
-                    if(!s.active) { playSound(s.freq); s.active = 1; }
-                    break;
+            
+            if (b.isSliding) {
+                b.x += b.vx * dt;
+                if (b.x >= t.steps[0].x) {
+                    b.x = t.steps[0].x;
+                    b.isSliding = false;
+                    hitStep(t.steps[0]);
+                    b.vy = BOUNCE_UP;
+                }
+            } else {
+                b.vy += GRAVITY * dt; b.x += b.vx * dt; b.y += b.vy * dt;
+                for (let i = t.cur; i < Math.min(t.cur + 5, t.steps.length); i++) {
+                    let s = t.steps[i];
+                    if (b.x >= s.x && b.x <= s.x + s.w && prevY + BALL_R <= s.y + 10 && b.y + BALL_R >= s.y) {
+                        b.y = s.y - BALL_R; b.vy = BOUNCE_UP; t.cur = i;
+                        if(!s.active) hitStep(s);
+                        break;
+                    }
                 }
             }
         });
+        
         const mb = tracks[0].ball;
         camX += (mb.x - canvas.width * 0.22 - camX) * 0.1;
         camY += (mb.y - canvas.height * 0.45 - camY) * 0.05;
@@ -168,13 +177,15 @@ function loop() {
     requestAnimationFrame(loop);
 }
 
-function playSound(f) {
+function hitStep(s) {
+    if (s.active) return;
     const osc = audioCtx.createOscillator(); const g = audioCtx.createGain();
-    osc.type = 'triangle'; osc.frequency.setValueAtTime(f, audioCtx.currentTime);
+    osc.type = 'triangle'; osc.frequency.setValueAtTime(s.freq, audioCtx.currentTime);
     g.gain.setValueAtTime(0.12, audioCtx.currentTime);
     g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
     osc.connect(g); g.connect(audioCtx.destination);
     osc.start(); osc.stop(audioCtx.currentTime + 0.3);
+    s.active = 1;
 }
 
 function draw() {
@@ -188,18 +199,16 @@ function draw() {
 
     ctx.save();
     ctx.translate(canvas.width/2, canvas.height/2);
-    ctx.scale(0.55, 0.55); 
+    ctx.scale(0.5, 0.5); 
     ctx.translate(-canvas.width/2, -canvas.height/2);
     ctx.translate(-camX, -camY);
 
     gallery.forEach(p => {
-        if(Math.abs(p.x - camX) < 1600) {
+        if(Math.abs(p.x - camX) < 1800) {
             ctx.save();
             ctx.translate(p.x + p.w/2, p.y + p.h/2);
             ctx.rotate(p.rot);
-            // 精緻相框與陰影
-            ctx.shadowBlur = 10; ctx.shadowColor = "rgba(0,0,0,0.5)";
-            ctx.fillStyle = "#fff"; ctx.fillRect(-p.w/2-4, -p.h/2-4, p.w+8, p.h+8);
+            ctx.fillStyle = "#fff"; ctx.fillRect(-p.w/2-5, -p.h/2-5, p.w+10, p.h+10);
             ctx.drawImage(p.img, -p.w/2, -p.h/2, p.w, p.h);
             ctx.restore();
         }
@@ -207,7 +216,7 @@ function draw() {
 
     tracks.forEach(t => {
         t.steps.forEach(s => {
-            if(Math.abs(s.x - camX) < 1200) {
+            if(Math.abs(s.x - camX) < 1400) {
                 ctx.fillStyle = s.active ? "#fff" : "rgba(255,255,255,0.15)";
                 ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, 18, 9); ctx.fill();
             }
@@ -219,7 +228,7 @@ function draw() {
 
     if (!isBallMoving && camX > 500) {
         ctx.fillStyle = "rgba(0,0,0,0.85)"; ctx.fillRect(0,0,canvas.width,canvas.height);
-        ctx.fillStyle = "#fff"; ctx.font = "bold 32px sans-serif"; ctx.textAlign = "center";
+        ctx.fillStyle = "#fff"; ctx.font = "bold 35px sans-serif"; ctx.textAlign = "center";
         ctx.fillText(currentMsg, canvas.width/2, canvas.height/2);
         if(cornerImg.complete) ctx.drawImage(cornerImg, canvas.width-150, canvas.height-170, 110, 110);
     }
