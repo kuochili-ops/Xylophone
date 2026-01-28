@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴工坊 - 極致慢速無縫版</title>
+    <title>AI 木琴工坊 - 固定板長無縫版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --panel: rgba(15, 23, 42, 0.98); }
@@ -26,14 +26,14 @@
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="margin:0;">🐌 極致慢速 (X 0.5)</h2>
+        <h2 style="margin:0;">📏 固定板長無縫版</h2>
         <div class="section-title">1. MIDI 軌道 (預設已載入)</div>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleMidiUpload(this)">
         <div id="trackContainer" class="track-list">讀取中...</div>
         <div class="section-title">2. 照片廊道 (多選)</div>
         <input type="file" id="galleryFiles" multiple accept="image/*">
         <div class="section-title">3. 結束留言</div>
-        <input type="text" id="msgInit" value="Ultra Slow Journey. 終">
+        <input type="text" id="msgInit" value="Back to Fixed Length. 終">
         <button id="entryBtn" class="btn" onclick="enterScene()" disabled>確認並進入</button>
     </div>
 </div>
@@ -46,15 +46,16 @@
 <canvas id="stage"></canvas>
 
 <script>
-// 速度減半：TIME_SCALE 從 180 降至 90
+// 速度維持 0.5X (相較於 180 為 90)
 const TIME_SCALE = 90; 
 const CONFIG = { 
-    GRAVITY: 0.2,            // 重力大幅降低，配合極慢速
+    GRAVITY: 0.25, 
     BALL_VX: TIME_SCALE / 60, 
-    BOUNCE_UP: -0.3,         // 輕微彈起
-    STEP_Y_GAP: 4,           // 斜率微降
+    BOUNCE_UP: -0.32, 
+    STEP_Y_GAP: 4, 
     TIME_SCALE: TIME_SCALE,     
-    BALL_R: 10 
+    BALL_R: 10,
+    FIXED_STEP_W: 80         // 回到原來的板長 80
 };
 
 const canvas = document.getElementById('stage');
@@ -91,7 +92,7 @@ window.addEventListener('load', async () => {
 
 function loadDefaultMelody() {
     const container = document.getElementById('trackContainer');
-    container.innerHTML = `<div class="track-item active" id="defaultTrack"><span>慢速預設旋律</span></div>`;
+    container.innerHTML = `<div class="track-item active" id="defaultTrack"><span>慢速固定板長版</span></div>`;
     selectedTrackIdx = 999;
     document.getElementById('entryBtn').disabled = false;
     document.getElementById('defaultTrack').onclick = () => {
@@ -176,15 +177,8 @@ function buildSteps(track) {
     
     notes.forEach((n, i) => {
         let x = n.time * CONFIG.TIME_SCALE;
-        let w = 60; 
-        
-        // 嚴格無縫銜接
-        if (i < notes.length - 1) {
-            let nextX = notes[i+1].time * CONFIG.TIME_SCALE;
-            w = nextX - x;
-        } else {
-            w = 120;
-        }
+        // 雖然寬度固定，但因為 X 是依照 MIDI 定義，所以頭尾接的特性會由碰撞邏輯處理
+        let w = CONFIG.FIXED_STEP_W; 
         
         currentY += CONFIG.STEP_Y_GAP;
         steps.push({ x, y: currentY, w: w, freq: 440*Math.pow(2,(n.midi-69)/12), color: `hsla(${(n.midi*15)%360}, 75%, 60%, 0.8)`, active: 0, flash: 0 });
@@ -205,7 +199,7 @@ function startRecording() {
     recorder.onstop = () => {
         const blob = new Blob(chunks, { type: 'video/webm' });
         const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-        a.download = `ultraslow_show_${Date.now()}.webm`; a.click();
+        a.download = `fixed_seamless_${Date.now()}.webm`; a.click();
         setTimeout(() => location.reload(), 1000);
     };
     recorder.start(100);
@@ -220,17 +214,18 @@ function update() {
     if (t.cur >= t.steps.length) { triggerFinish(); return; }
     
     t.steps.forEach((s, idx) => {
+        // 碰撞邏輯維持「接續」特性：一旦球到達下一個音符的 X 座標，就強制偵測
         if (b.x >= s.x && b.x < s.x + s.w && b.y + CONFIG.BALL_R >= s.y && b.y < s.y + 15 && b.vy >= 0) {
             b.y = s.y - CONFIG.BALL_R; b.vy = CONFIG.BOUNCE_UP;
             if (!s.active) {
                 const osc = audioCtx.createOscillator();
                 const g = audioCtx.createGain();
-                osc.type = 'sine'; // 慢速下正弦波更柔和
+                osc.type = 'triangle'; 
                 osc.frequency.setValueAtTime(s.freq, audioCtx.currentTime);
                 g.gain.setTargetAtTime(0.3, audioCtx.currentTime, 0.01);
-                g.gain.setTargetAtTime(0, audioCtx.currentTime + 0.3, 0.4); // 尾音拉長
+                g.gain.setTargetAtTime(0, audioCtx.currentTime + 0.15, 0.2);
                 osc.connect(g); g.connect(audioCtx.destination); g.connect(audioDest);
-                osc.start(); osc.stop(audioCtx.currentTime + 1.2);
+                osc.start(); osc.stop(audioCtx.currentTime + 1.0);
                 s.active = 1; s.flash = 1.0;
                 t.cur = idx + 1;
             }
@@ -248,7 +243,7 @@ function draw() {
         tracks[0].steps.forEach(s => {
             if (s.x > camX - 200 && s.x < camX + canvas.width + 400) {
                 ctx.fillStyle = s.color; ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, 12, 6); ctx.fill();
-                if(s.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${s.flash})`; ctx.fill(); s.flash *= 0.95; }
+                if(s.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${s.flash})`; ctx.fill(); s.flash *= 0.9; }
             }
         });
         if (!isFinishing && isBallMoving) {
