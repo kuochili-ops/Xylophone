@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴工坊 - 完整展演版</title>
+    <title>AI 木琴工坊 - 軌道試聽版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --panel: rgba(15, 23, 42, 0.98); }
@@ -10,28 +10,27 @@
         #setupPanel { position: fixed; inset: 0; background: radial-gradient(circle at center, #1e293b, #020617); z-index: 5000; display: flex; justify-content: center; align-items: center; }
         .config-card { background: var(--panel); padding: 30px; border-radius: 20px; border: 2px solid #334155; width: 450px; text-align: center; }
         .section-title { font-size: 13px; color: var(--accent); margin: 15px 0 5px 0; font-weight: bold; text-align: left; }
-        .track-list { margin: 10px 0; max-height: 120px; overflow-y: auto; background: #070b14; border-radius: 10px; padding: 10px; border: 1px solid #1e293b; text-align: left; }
-        .track-item { padding: 10px; margin-bottom: 5px; background: #1e293b; border-radius: 6px; cursor: pointer; font-size: 12px; }
-        .track-item.active { background: var(--accent); border: 1px solid #fff; }
-        .record-ui { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; display: none; gap: 12px; background: var(--panel); padding: 12px 28px; border-radius: 50px; border: 1px solid #3b82f6; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
-        .ctrl-btn { border: none; padding: 10px 22px; border-radius: 20px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+        .track-list { margin: 10px 0; max-height: 200px; overflow-y: auto; background: #070b14; border-radius: 10px; padding: 10px; border: 1px solid #1e293b; text-align: left; }
+        .track-item { padding: 12px; margin-bottom: 8px; background: #1e293b; border-radius: 8px; cursor: pointer; font-size: 13px; transition: 0.2s; border: 1px solid transparent; }
+        .track-item:hover { background: #2d3a4f; }
+        .track-item.active { background: var(--accent); border-color: #fff; box-shadow: 0 0 10px rgba(59, 130, 246, 0.5); }
+        .track-item .preview-tag { float: right; font-size: 10px; background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px; }
+        .record-ui { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; display: none; gap: 12px; background: var(--panel); padding: 12px 28px; border-radius: 50px; border: 1px solid #3b82f6; }
+        .ctrl-btn { border: none; padding: 10px 22px; border-radius: 20px; cursor: pointer; font-weight: bold; }
         #playBtn { background: #10b981; color: white; }
-        #playBtn.playing { background: #f59e0b; }
         #recBtn { background: #ef4444; color: white; }
-        #recBtn.recording { background: #991b1b; box-shadow: 0 0 10px #ef4444; }
         input { width: 100%; padding: 12px; margin-bottom: 10px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: #fff; box-sizing: border-box; }
         .btn { width: 100%; padding: 15px; border-radius: 10px; background: var(--accent); color: white; border:none; font-weight: bold; cursor:pointer; }
-        .btn:disabled { opacity: 0.3; }
     </style>
 </head>
 <body>
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="margin:0;">🎭 完整展演系統</h2>
-        <div class="section-title">1. MIDI 軌道 (必選)</div>
+        <h2 style="margin:0;">🎵 軌道試聽選擇</h2>
+        <div class="section-title">1. 上傳或選擇 MIDI (點擊軌道試聽)</div>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleMidiUpload(this)">
-        <div id="trackContainer" class="track-list">讀取預載音樂中...</div>
+        <div id="trackContainer" class="track-list">讀取音樂中...</div>
         <div class="section-title">2. 照片廊道 (多選)</div>
         <input type="file" id="galleryFiles" multiple accept="image/*">
         <div class="section-title">3. 結束留言</div>
@@ -48,26 +47,23 @@
 <canvas id="stage"></canvas>
 
 <script>
-const CONFIG = {
-    GRAVITY: 1.2, BALL_VX: 5.2, BOUNCE_UP: -0.6, 
-    STEP_Y_GAP: 15, TIME_SCALE: 320, BALL_R: 10
-};
-
+const CONFIG = { GRAVITY: 1.2, BALL_VX: 5.2, BOUNCE_UP: -0.6, STEP_Y_GAP: 15, TIME_SCALE: 320, BALL_R: 10 };
 const canvas = document.getElementById('stage');
 const ctx = canvas.getContext('2d', { alpha: false });
 let audioCtx, tracks = [], isRunning = false, isBallMoving = false, fullMidi, gallery = [];
 let camX = 0, camY = 0, recorder, chunks = [], audioDest, selectedTrackIdx = -1;
 let isFinishing = false, finishAlpha = 0, isRecording = false, currentMsg = "";
-let saveCounter = 0;
+let saveCounter = 0, previewTimeout = null;
 const cornerImg = new Image(); cornerImg.src = 'IMG_6604.png';
 
 canvas.width = window.innerWidth; canvas.height = window.innerHeight;
 
-function initAudio() {
+async function ensureAudioStarted() {
     if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         audioDest = audioCtx.createMediaStreamDestination();
     }
+    if (audioCtx.state === 'suspended') await audioCtx.resume();
 }
 
 window.addEventListener('load', async () => {
@@ -85,20 +81,42 @@ function parseMidi(buf) {
         if(t.notes.length < 2) return;
         const item = document.createElement('div');
         item.className = "track-item";
-        item.innerText = `軌道 ${i+1} (${t.notes.length} 音符)`;
-        item.onclick = () => {
+        item.innerHTML = `<span>軌道 ${i+1} (${t.notes.length} 音符)</span><span class="preview-tag">試聽</span>`;
+        item.onclick = async () => {
+            await ensureAudioStarted();
             selectedTrackIdx = i;
             document.querySelectorAll('.track-item').forEach(e => e.classList.remove('active'));
             item.classList.add('active');
             document.getElementById('entryBtn').disabled = false;
+            previewTrack旋律(t); // 觸發試聽
         };
         container.appendChild(item);
     });
 }
 
-function handleMidiUpload(input) {
-    if(input.files[0]) input.files[0].arrayBuffer().then(parseMidi);
+// 試聽特定軌道的邏輯
+function previewTrack旋律(track) {
+    if (previewTimeout) { clearTimeout(previewTimeout); }
+    // 建立一個臨時的試聽播放
+    const now = audioCtx.currentTime;
+    const previewNotes = track.notes.slice(0, 15); // 只試聽前 15 個音符
+    
+    previewNotes.forEach(n => {
+        const osc = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(440 * Math.pow(2, (n.midi - 69) / 12), now + n.time);
+        g.gain.setValueAtTime(0, now + n.time);
+        g.gain.linearRampToValueAtTime(0.2, now + n.time + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.001, now + n.time + 0.3);
+        osc.connect(g);
+        g.connect(audioCtx.destination);
+        osc.start(now + n.time);
+        osc.stop(now + n.time + 0.4);
+    });
 }
+
+function handleMidiUpload(input) { if(input.files[0]) input.files[0].arrayBuffer().then(parseMidi); }
 
 function drawFramedImage(item) {
     const { img, x, y, w } = item;
@@ -112,20 +130,16 @@ function drawFramedImage(item) {
 }
 
 async function enterScene() {
-    initAudio();
+    await ensureAudioStarted();
     currentMsg = document.getElementById('msgInit').value;
     buildSteps(fullMidi.tracks[selectedTrackIdx]);
     const steps = tracks[0].steps;
     const gFiles = document.getElementById('galleryFiles').files;
-    if(gFiles.length > 0) {
-        for (let i = 0; i < gFiles.length; i++) {
-            const img = new Image();
-            img.src = URL.createObjectURL(gFiles[i]);
-            await new Promise(r => { img.onload = r; img.onerror = r; });
-            const targetIdx = Math.floor((i / gFiles.length) * (steps.length - 1));
-            const s = steps[targetIdx];
-            gallery.push({ img, x: s.x + 150, y: s.y - 350, w: 300 });
-        }
+    for (let i = 0; i < gFiles.length; i++) {
+        const img = new Image(); img.src = URL.createObjectURL(gFiles[i]);
+        await new Promise(r => img.onload = r);
+        const targetIdx = Math.floor((i / gFiles.length) * (steps.length - 1));
+        gallery.push({ img, x: steps[targetIdx].x + 150, y: steps[targetIdx].y - 350, w: 300 });
     }
     document.getElementById('setupPanel').style.display = 'none';
     document.getElementById('recordUI').style.display = 'flex';
@@ -134,7 +148,7 @@ async function enterScene() {
 
 function buildSteps(track) {
     let steps = [], currentY = 300;
-    const notes = track.notes.sort((a,b) => a.time - b.time);
+    const notes = [...track.notes].sort((a,b) => a.time - b.time);
     notes.forEach((n, i) => {
         let x = n.time * CONFIG.TIME_SCALE;
         let w = n.duration * CONFIG.TIME_SCALE;
@@ -144,66 +158,31 @@ function buildSteps(track) {
             if (gap > 0) w += gap; 
         }
         currentY += CONFIG.STEP_Y_GAP;
-        const hue = (n.midi * 15) % 360;
-        steps.push({ x, y: currentY, w: Math.max(w, 40), freq: 440*Math.pow(2,(n.midi-69)/12), color: `hsla(${hue}, 75%, 60%, 0.8)`, active: 0, flash: 0 });
+        steps.push({ x, y: currentY, w: Math.max(w, 40), freq: 440*Math.pow(2,(n.midi-69)/12), color: `hsla(${(n.midi*15)%360}, 75%, 60%, 0.8)`, active: 0, flash: 0 });
     });
     tracks = [{ steps, ball: { x: steps[0].x, y: steps[0].y - 30, vx: CONFIG.BALL_VX, vy: 0 }, cur: 0 }];
 }
 
-// 播放與暫停切換
-function togglePlay() {
-    isBallMoving = !isBallMoving;
-    const btn = document.getElementById('playBtn');
-    btn.innerText = isBallMoving ? "⏸ 暫停演奏" : "▶ 播放演奏";
-    btn.classList.toggle('playing', isBallMoving);
-}
-
-// 錄影按鈕邏輯
-function handleRecClick() {
-    if (!isRecording) {
-        startRecording();
-    } else {
-        triggerFinish();
-    }
-}
+async function togglePlay() { await ensureAudioStarted(); isBallMoving = !isBallMoving; }
+async function handleRecClick() { await ensureAudioStarted(); if (!isRecording) startRecording(); else triggerFinish(); }
 
 function startRecording() {
     chunks = [];
     const stream = canvas.captureStream(60);
     stream.addTrack(audioDest.stream.getAudioTracks()[0]);
-    const mimeType = MediaRecorder.isTypeSupported('video/mp4;codecs=h264') ? 'video/mp4;codecs=h264' : 'video/webm;codecs=vp9';
-    recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 15000000 });
-    
-    recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
-    
-    recorder.onstart = () => {
-        isRecording = true;
-        isBallMoving = true; // 錄影啟動後強制跑球
-        document.getElementById('recBtn').innerText = "⏹ 結束錄製";
-        document.getElementById('recBtn').classList.add('recording');
-        document.getElementById('playBtn').innerText = "⏸ 暫停演奏";
-        document.getElementById('playBtn').classList.add('playing');
-    };
-
+    recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9', videoBitsPerSecond: 15000000 });
+    recorder.ondataavailable = e => chunks.push(e.data);
+    recorder.onstart = () => { isRecording = true; isBallMoving = true; };
     recorder.onstop = () => {
-        const blob = new Blob(chunks, { type: recorder.mimeType });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = `music_performance_${Date.now()}.mp4`;
-        a.click();
+        const blob = new Blob(chunks, { type: 'video/webm' });
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+        a.download = `music_${Date.now()}.webm`; a.click();
         setTimeout(() => location.reload(), 1000);
     };
     recorder.start(100);
 }
 
-function triggerFinish() {
-    if (isFinishing) return;
-    isFinishing = true;
-    isBallMoving = false;
-    document.getElementById('recBtn').innerText = "⌛ 處理結尾...";
-    document.getElementById('recBtn').disabled = true;
-    document.getElementById('playBtn').disabled = true;
-}
+function triggerFinish() { isFinishing = true; isBallMoving = false; }
 
 function update() {
     if (!isRunning || !isBallMoving || isFinishing) return;
@@ -218,61 +197,43 @@ function update() {
             const g = audioCtx.createGain();
             osc.type = 'triangle'; osc.frequency.setValueAtTime(s.freq, audioCtx.currentTime);
             g.gain.setTargetAtTime(0.3, audioCtx.currentTime, 0.01);
-            g.gain.setTargetAtTime(0, audioCtx.currentTime + 0.15, 0.1);
-            osc.connect(g); g.connect(audioCtx.destination);
-            const gRec = audioCtx.createGain(); gRec.gain.value = 0.3;
-            osc.connect(gRec); gRec.connect(audioDest);
-            osc.start(); osc.stop(audioCtx.currentTime + 0.6);
+            g.gain.setTargetAtTime(0, audioCtx.currentTime + 0.1, 0.1);
+            osc.connect(g); g.connect(audioCtx.destination); g.connect(audioDest);
+            osc.start(); osc.stop(audioCtx.currentTime + 0.5);
             s.active = 1; s.flash = 1.0;
         }
     }
     if (s && b.x > s.x + s.w) t.cur++; 
-    camX += (b.x - canvas.width/2 - camX) * 0.15;
-    camY += (b.y - canvas.height/2 - camY) * 0.15;
+    camX += (b.x - canvas.width/2 - camX) * 0.15; camY += (b.y - canvas.height/2 - camY) * 0.15;
 }
 
 function draw() {
     ctx.fillStyle = "#020617"; ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.save();
     ctx.translate(-Math.round(camX), -Math.round(camY));
-    gallery.forEach(item => {
-        if (item.x > camX - 400 && item.x < camX + canvas.width + 400) drawFramedImage(item);
-    });
+    gallery.forEach(item => { if (item.x > camX - 400 && item.x < camX + canvas.width + 400) drawFramedImage(item); });
     if (tracks[0]) {
         tracks[0].steps.forEach(s => {
             if (s.x > camX - 200 && s.x < camX + canvas.width + 200) {
-                ctx.fillStyle = s.color;
-                ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, 12, 6); ctx.fill();
+                ctx.fillStyle = s.color; ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, 12, 6); ctx.fill();
                 if(s.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${s.flash})`; ctx.fill(); s.flash *= 0.9; }
             }
         });
         if (!isFinishing && isBallMoving) {
-            const b = tracks[0].ball;
-            ctx.fillStyle = "#f43f5e"; ctx.beginPath(); ctx.arc(b.x, b.y, CONFIG.BALL_R, 0, Math.PI*2); ctx.fill();
+            const b = tracks[0].ball; ctx.fillStyle = "#f43f5e"; ctx.beginPath(); ctx.arc(b.x, b.y, CONFIG.BALL_R, 0, Math.PI*2); ctx.fill();
         }
     }
     ctx.restore();
-    
     if (isFinishing) {
         finishAlpha = Math.min(finishAlpha + 0.015, 1);
-        ctx.fillStyle = `rgba(0,0,0,${finishAlpha * 0.9})`;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.save();
-        ctx.globalAlpha = finishAlpha;
-        ctx.fillStyle = "white"; ctx.font = "bold 50px sans-serif"; ctx.textAlign = "center";
+        ctx.fillStyle = `rgba(0,0,0,${finishAlpha * 0.9})`; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.save(); ctx.globalAlpha = finishAlpha; ctx.fillStyle = "white"; ctx.font = "bold 50px sans-serif"; ctx.textAlign = "center";
         ctx.fillText(currentMsg, canvas.width/2, canvas.height/2);
         if (cornerImg.complete) ctx.drawImage(cornerImg, canvas.width/2 - 100, canvas.height/2 + 70, 200, 200);
         ctx.restore();
-
-        if (isRecording && finishAlpha >= 1) {
-            saveCounter++;
-            if (saveCounter > 180) {
-                isRecording = false; recorder.stop();
-            }
-        }
+        if (isRecording && finishAlpha >= 1) { saveCounter++; if (saveCounter > 180) { isRecording = false; recorder.stop(); } }
     }
-    update();
-    requestAnimationFrame(draw);
+    update(); requestAnimationFrame(draw);
 }
 draw();
 </script>
