@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>木琴工坊 - Final Position</title>
+    <title>木琴工坊 - Auto End Pro</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; }
@@ -30,14 +30,12 @@
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="text-align:center; margin-top:0;">🎹 木琴工坊 Pro</h2>
-        <label>1. MIDI 音軌 (預設已載入)</label>
-        <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleManualMidi(this)">
+        <h2 style="text-align:center; margin-top:0;">🎹 木琴工坊 Auto</h2>
+        <label>1. MIDI 音軌 (已載入預設)</label>
         <div id="trackContainer" class="track-list">載入中...</div>
-        <label>2. 廊道相片 (建議多張)</label>
         <input type="file" id="galleryFiles" multiple accept="image/*" onchange="previewImages(this)">
         <div id="photoPreview"></div>
-        <label>3. 結尾訊息</label>
+        <label>2. 結尾訊息</label>
         <input type="text" id="msgInit" value="Thanks for Watching!">
         <button id="entryBtn" class="primary-btn" onclick="enterScene()" disabled>進入舞台</button>
     </div>
@@ -57,7 +55,7 @@ let audioCtx, tracks = [], isRunning = false, isBallMoving = false, gallery = []
 let camX = 0, camY = 0, recorder, chunks = [], audioDest, selectedTrackIdx = -1;
 let isFinishing = false, isRecording = false, currentMsg = "";
 let lastTime = 0, isInitialSlide = true;
-let zoomScale = 0.85; // 稍微拉近一點，讓下移後的照片更清晰
+const zoomScale = 0.85;
 
 const cornerImg = new Image(); cornerImg.src = 'IMG_6604.png';
 const GRAVITY = 3500, BALL_VX = 360, BOUNCE_UP = -30, BALL_R = 12;
@@ -71,11 +69,6 @@ window.addEventListener('load', async () => {
         if (res.ok) processMidiBuffer(await res.arrayBuffer());
     } catch (e) { document.getElementById('trackContainer').innerText = "請手動上傳 MIDI"; }
 });
-
-function handleManualMidi(input) {
-    if(!input.files[0]) return;
-    input.files[0].arrayBuffer().then(processMidiBuffer);
-}
 
 function processMidiBuffer(buf) {
     const fullMidi = new Midi(buf);
@@ -116,7 +109,6 @@ async function enterScene() {
         await new Promise(r => img.onload = r);
         const dispW = 280;
         const dispH = dispW * (img.height / img.width);
-        // 照片再次下移，距離音階僅 30px
         const s = tracks[0].steps[Math.floor((i/gFiles.length)*tracks[0].steps.length)];
         gallery.push({ img, x: s.x + 80, y: s.y - dispH - 30, w: dispW, h: dispH });
     }
@@ -164,20 +156,37 @@ function handleRecording() {
     }
 }
 
+// 核心功能：偵測球是否完成任務
+function checkAutoEnd() {
+    const t = tracks[0];
+    const b = t.ball;
+    const lastStep = t.steps[t.steps.length - 1];
+    
+    // 如果已經彈過最後一個階梯，且小球高度低於階梯 200px (代表墜落中)
+    if (t.cur >= t.steps.length - 1 && b.y > lastStep.y + 200) {
+        triggerEndSequence();
+    }
+}
+
 function triggerEndSequence() {
+    if (isFinishing) return; // 避免重複觸發
     isFinishing = true;
     isBallMoving = false;
     document.getElementById('recordUI').style.display = 'none';
+    
     let timer = 0;
     const holdVideo = () => {
         draw(); 
         timer++;
-        if (timer < 180) { // 再次微調延長至 6 秒確保 100% 錄製成功
+        if (timer < 180) { 
             requestAnimationFrame(holdVideo);
         } else {
             if(recorder && recorder.state !== 'inactive') {
                 recorder.requestData();
                 setTimeout(() => recorder.stop(), 500);
+            } else if (!isRecording) {
+                // 如果沒在錄影，純粹重整
+                setTimeout(() => location.reload(), 2000);
             }
         }
     };
@@ -189,7 +198,7 @@ function saveVideo() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `music_final_${Date.now()}.mp4`;
+    a.download = `music_auto_end_${Date.now()}.mp4`;
     a.click();
     setTimeout(() => location.reload(), 2000);
 }
@@ -219,6 +228,8 @@ function loop(timestamp) {
                         }
                     }
                 }
+                // 每一影格檢查是否該結束
+                checkAutoEnd();
             }
             camX += (b.x - canvas.width * 0.25 - camX) * 0.1;
             camY += (b.y - canvas.height * 0.55 - camY) * 0.1;
