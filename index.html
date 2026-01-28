@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>木琴工坊 - 壓縮優化版</title>
+    <title>木琴工坊 - 密集階梯版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --success: #10b981; }
@@ -29,14 +29,13 @@
 
 <div id="setupPanel">
     <div class="config-card">
-        <h3 style="text-align:center; margin-top:0;">🎥 輕量優化模式</h3>
+        <h3 style="text-align:center; margin-top:0;">🎹 密集階梯排列模式</h3>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleManualMidi(this)">
         <div id="trackContainer" class="track-list">讀取 MIDI...</div>
         <input type="file" id="galleryFiles" multiple accept="image/*" onchange="previewImages(this)">
         <div id="photoPreview"></div>
         <input type="text" id="msgInit" value="Thanks for Watching!">
         <button id="entryBtn" class="primary-btn" onclick="enterScene()" disabled>進入場景</button>
-        <p style="font-size: 11px; color: #64748b; text-align: center; margin-top: 10px;">*已自動壓縮畫質以提升錄影成功率</p>
     </div>
 </div>
 
@@ -128,7 +127,7 @@ async function enterScene() {
         await new Promise(r => img.onload = r);
         const s = tracks[0].steps[Math.floor((i/gFiles.length)*tracks[0].steps.length)];
         const dispW = 280; const dispH = dispW * (img.height / img.width);
-        gallery.push({ img, x: s.x + 150, y: s.y - dispH - 80, w: dispW, h: dispH });
+        gallery.push({ img, x: s.x + 150, y: s.y - dispH - 120, w: dispW, h: dispH });
     }
     document.getElementById('setupPanel').style.display = 'none';
     document.getElementById('recordUI').style.display = 'flex';
@@ -138,11 +137,23 @@ async function enterScene() {
 
 function buildSteps(track) {
     let rawNotes = track.notes.sort((a,b) => a.time - b.time);
-    let steps = [], startY = canvas.height * 0.5;
+    let steps = [], startY = canvas.height * 0.4;
+    
     rawNotes.forEach((n, i) => {
         let x = n.time * BALL_VX;
-        let y = startY + (i * 18);
+        let y = startY + (i * 18); // 階梯式下移
         let w = Math.max(n.duration * BALL_VX, 45);
+        
+        // 🛠️ 核心修改：橫向間距處理
+        if (i > 0) {
+            let prev = steps[i-1];
+            let endOfPrev = prev.x + prev.w;
+            // 如果目前音階起始大於前一個音階結束，強制縮短間距至球半徑以內 (8px)
+            if (x > endOfPrev + 8) {
+                prev.w = x - prev.x - 5; // 讓前一個稍微伸長，保持頭尾相接感
+            }
+        }
+        
         steps.push({ x, y, w, freq: 440*Math.pow(2,(n.midi-69)/12), color: NOTE_COLORS[n.midi % 12], active: 0 });
     });
     tracks = [{ steps, ball: { x: steps[0].x - 450, y: steps[0].y - BALL_R, vx: BALL_VX, vy: 0 }, cur: 0 }];
@@ -188,7 +199,6 @@ function hitStep(s) {
 function draw() {
     ctx.fillStyle = "#020617"; ctx.fillRect(0, 0, canvas.width, canvas.height);
     
-    // 效能優化：錄製結尾時不畫星星
     if (!isFinishing) {
         stars.forEach(s => {
             let x = (s.x - camX * s.parallax) % canvas.width; if (x < 0) x += canvas.width;
@@ -213,7 +223,7 @@ function draw() {
     if (tracks[0]) {
         tracks[0].steps.forEach(s => {
             if(s.x - camX < canvas.width + 400 && s.x - camX > -s.w - 400) {
-                ctx.fillStyle = s.active ? "#fff" : s.color + "bb";
+                ctx.fillStyle = s.active ? "#fff" : s.color + "cc";
                 ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, 18, 9); ctx.fill();
             }
         });
@@ -237,10 +247,8 @@ function handleRecording() {
     if (isSaving) return;
     if (!isRecording) {
         chunks = [];
-        // 降低 FPS 至 24
         const stream = canvas.captureStream(24);
         const combined = new MediaStream([...stream.getTracks(), ...audioDest.stream.getTracks()]);
-        // 💡 大幅降低頻寬至 2.5Mbps，減少記憶體崩潰機率
         recorder = new MediaRecorder(combined, { mimeType: 'video/webm;codecs=vp8', videoBitsPerSecond: 2500000 });
         recorder.ondataavailable = e => { if(e.data.size > 0) chunks.push(e.data); };
         recorder.onstop = saveVideo;
@@ -258,7 +266,6 @@ function triggerEndSequence() {
     const btn = document.getElementById('recBtn');
     btn.innerText = "SAVING..."; btn.classList.add('is-saving');
 
-    // 💡 每 500ms 強推數據，共推 3 秒 (比之前短一點，防止緩衝區爆掉)
     let count = 0;
     const flusher = setInterval(() => {
         if (recorder && recorder.state === 'recording') recorder.requestData();
@@ -273,7 +280,7 @@ function triggerEndSequence() {
 function saveVideo() {
     const blob = new Blob(chunks, { type: 'video/webm' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = `mario_compact_${Date.now()}.webm`; a.click();
+    a.download = `mario_staircase_${Date.now()}.webm`; a.click();
     setTimeout(() => location.reload(), 2000);
 }
 </script>
