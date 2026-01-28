@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>木琴工坊 - 錄影終極修復</title>
+    <title>木琴工坊 - 錄影結尾保證版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --success: #10b981; }
@@ -21,7 +21,7 @@
         #playBtn { background: var(--success); }
         #recBtn { background: #ef4444; border: 4px solid #fff; }
         #recBtn.is-recording { border-radius: 12px; background: #991b1b; animation: pulse 1.5s infinite; }
-        #recBtn.is-saving { background: #475569; border: none; opacity: 0.8; cursor: wait; transform: scale(0.9); }
+        #recBtn.is-saving { background: #475569; opacity: 0.7; border: none; cursor: wait; transform: scale(0.9); }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
         input[type="file"], input[type="text"] { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #334155; background: #0f172a; color: #fff; margin-bottom: 10px; box-sizing: border-box; }
         .primary-btn { width: 100%; padding: 18px; border-radius: 15px; background: var(--accent); color: white; border: none; font-size: 16px; font-weight: bold; cursor: pointer; }
@@ -31,13 +31,13 @@
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="text-align:center; margin: 0 0 20px 0;">🎬 完美結尾修復版</h2>
+        <h2 style="text-align:center; margin: 0 0 20px 0;">🎬 完美結尾版</h2>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleManualMidi(this)">
-        <div id="trackContainer" class="track-list">讀取 MIDI...</div>
+        <div id="trackContainer" class="track-list">讀取 MIDI 中...</div>
         <input type="file" id="galleryFiles" multiple accept="image/*" onchange="previewImages(this)">
         <div id="photoPreview"></div>
-        <input type="text" id="msgInit" value="The End. Thanks!">
-        <button id="entryBtn" class="primary-btn" onclick="enterScene()" disabled>開始廣角演奏</button>
+        <input type="text" id="msgInit" value="Thanks for Watching!">
+        <button id="entryBtn" class="primary-btn" onclick="enterScene()" disabled>開始</button>
     </div>
 </div>
 
@@ -84,7 +84,7 @@ function processMidiBuffer(buf) {
         if(t.notes.length === 0) return;
         const item = document.createElement('div');
         item.className = "track-item";
-        item.innerHTML = `音軌 ${i+1} (${t.notes.length} 音符)`;
+        item.innerHTML = `音軌 ${i+1} (${t.notes.length})`;
         item.onclick = () => {
             selectedTrackData = t;
             document.querySelectorAll('.track-item').forEach(el => el.classList.remove('active'));
@@ -187,7 +187,6 @@ function draw() {
     });
     
     ctx.save();
-    // 廣角演奏畫面
     ctx.translate(canvas.width/2, canvas.height/2); 
     ctx.scale(0.65, 0.65); 
     ctx.translate(-canvas.width/2, -canvas.height/2);
@@ -213,15 +212,11 @@ function draw() {
     }
     ctx.restore();
 
-    // Ending 留言板與簽名
     if (isFinishing) {
         ctx.fillStyle = "rgba(0,0,0,0.95)"; ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.fillStyle = "#fff"; ctx.font = "bold 38px sans-serif"; ctx.textAlign = "center";
         ctx.fillText(currentMsg, canvas.width/2, canvas.height/2);
-        if (cornerImg.complete) {
-            // 簽名稍微放大一點點
-            ctx.drawImage(cornerImg, canvas.width - 180, canvas.height - 220, 140, 140);
-        }
+        if (cornerImg.complete) ctx.drawImage(cornerImg, canvas.width - 180, canvas.height - 220, 140, 140);
     }
 }
 
@@ -233,8 +228,7 @@ function handleRecording() {
         chunks = [];
         const stream = canvas.captureStream(30);
         const combined = new MediaStream([...stream.getTracks(), ...audioDest.stream.getTracks()]);
-        // 提高頻寬確保品質
-        recorder = new MediaRecorder(combined, { mimeType: 'video/webm;codecs=vp8', videoBitsPerSecond: 6000000 });
+        recorder = new MediaRecorder(combined, { mimeType: 'video/webm;codecs=vp8', videoBitsPerSecond: 5000000 });
         recorder.ondataavailable = e => { if(e.data.size > 0) chunks.push(e.data); };
         recorder.onstop = saveVideo;
         recorder.start(1000); 
@@ -257,20 +251,18 @@ function triggerEndSequence() {
     recBtn.classList.remove('is-recording');
     recBtn.classList.add('is-saving');
 
-    // 💡 關鍵：強制刷新循環 (共 5 秒)
-    let flushTimer = 0;
+    // 💡 解決關鍵：連續強制刷新數據 5 秒鐘
+    let flushCount = 0;
     const flusher = setInterval(() => {
         if (recorder && recorder.state === 'recording') {
-            // 每 0.5 秒強迫錄影機「拍一張快照」存入數據塊
-            recorder.requestData(); 
+            recorder.requestData(); // 強制抓取目前的 Ending 畫面
         }
-        flushTimer++;
-        if (flushTimer >= 10) { 
+        flushCount++;
+        if (flushCount >= 10) { // 每 0.5 秒刷一次，共 5 秒
             clearInterval(flusher);
-            // 最後確認所有數據寫入後停止
-            setTimeout(() => {
-                if (recorder && recorder.state !== 'inactive') recorder.stop();
-            }, 500);
+            if (recorder && recorder.state !== 'inactive') {
+                recorder.stop();
+            }
         }
     }, 500);
 }
@@ -278,8 +270,7 @@ function triggerEndSequence() {
 function saveVideo() {
     const blob = new Blob(chunks, { type: 'video/webm' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = `mario_final_fixed_${Date.now()}.webm`; a.click();
-    // 下載完後稍微等一下再重新載入
+    a.download = `mario_verified_end_${Date.now()}.webm`; a.click();
     setTimeout(() => location.reload(), 2500);
 }
 </script>
