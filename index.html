@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>木琴工坊 - 錄影結尾保證版</title>
+    <title>木琴工坊 - 試聽恢復版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --success: #10b981; }
@@ -11,33 +11,37 @@
         #setupPanel { position: fixed; inset: 0; background: #020617; z-index: 5000; padding: 20px; display: flex; flex-direction: column; align-items: center; overflow-y: auto; }
         .config-card { background: rgba(15, 23, 42, 0.98); padding: 25px; border-radius: 24px; border: 1px solid #334155; width: 100%; max-width: 450px; }
         .track-list { max-height: 150px; overflow-y: auto; background: #070b14; border-radius: 12px; border: 1px solid #1e293b; margin: 10px 0; }
-        .track-item { padding: 10px; border-bottom: 1px solid #1e293b; font-size: 13px; cursor: pointer; }
-        .track-item.active { background: rgba(59, 130, 246, 0.2); border-left: 4px solid var(--accent); }
+        .track-item { padding: 12px; border-bottom: 1px solid #1e293b; font-size: 14px; cursor: pointer; transition: 0.2s; }
+        .track-item:hover { background: rgba(255,255,255,0.05); }
+        .track-item.active { background: rgba(59, 130, 246, 0.2); border-left: 4px solid var(--accent); color: #60a5fa; }
         #photoPreview { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; margin-top: 10px; }
         .photo-thumb { aspect-ratio: 1; background: #1e293b; border-radius: 6px; overflow: hidden; }
         .photo-thumb img { width: 100%; height: 100%; object-fit: cover; }
         .record-ui { position: fixed; bottom: 40px; left: 0; right: 0; z-index: 1000; display: none; justify-content: center; gap: 30px; }
-        .btn-main { width: 70px; height: 70px; border-radius: 50%; border: none; font-weight: bold; color: white; cursor: pointer; transition: 0.3s; }
+        .btn-main { width: 70px; height: 70px; border-radius: 50%; border: none; font-weight: bold; color: white; cursor: pointer; }
         #playBtn { background: var(--success); }
         #recBtn { background: #ef4444; border: 4px solid #fff; }
         #recBtn.is-recording { border-radius: 12px; background: #991b1b; animation: pulse 1.5s infinite; }
-        #recBtn.is-saving { background: #475569; opacity: 0.7; border: none; cursor: wait; transform: scale(0.9); }
+        #recBtn.is-saving { background: #475569; opacity: 0.8; cursor: wait; border: none; }
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
         input[type="file"], input[type="text"] { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #334155; background: #0f172a; color: #fff; margin-bottom: 10px; box-sizing: border-box; }
-        .primary-btn { width: 100%; padding: 18px; border-radius: 15px; background: var(--accent); color: white; border: none; font-size: 16px; font-weight: bold; cursor: pointer; }
+        .primary-btn { width: 100%; padding: 18px; border-radius: 15px; background: var(--accent); color: white; border: none; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 10px; }
     </style>
 </head>
 <body>
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="text-align:center; margin: 0 0 20px 0;">🎬 完美結尾版</h2>
+        <h2 style="text-align:center; margin: 0 0 20px 0;">🎵 設定與試聽</h2>
+        <label style="font-size:12px; color:#94a3b8;">1. 選擇 MIDI 檔案</label>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleManualMidi(this)">
-        <div id="trackContainer" class="track-list">讀取 MIDI 中...</div>
+        <div id="trackContainer" class="track-list">等待 MIDI 載入...</div>
+        <label style="font-size:12px; color:#94a3b8;">2. 上傳回憶照片</label>
         <input type="file" id="galleryFiles" multiple accept="image/*" onchange="previewImages(this)">
         <div id="photoPreview"></div>
-        <input type="text" id="msgInit" value="Thanks for Watching!">
-        <button id="entryBtn" class="primary-btn" onclick="enterScene()" disabled>開始</button>
+        <label style="font-size:12px; color:#94a3b8;">3. 結尾留言</label>
+        <input type="text" id="msgInit" value="Beautiful Memories.">
+        <button id="entryBtn" class="primary-btn" onclick="enterScene()" disabled>進入場景</button>
     </div>
 </div>
 
@@ -84,13 +88,31 @@ function processMidiBuffer(buf) {
         if(t.notes.length === 0) return;
         const item = document.createElement('div');
         item.className = "track-item";
-        item.innerHTML = `音軌 ${i+1} (${t.notes.length})`;
+        item.innerHTML = `音軌 ${i+1} (${t.notes.length} 音符)`;
         item.onclick = () => {
             selectedTrackData = t;
+            previewMelody(t); // 恢復試聽功能
             document.querySelectorAll('.track-item').forEach(el => el.classList.remove('active'));
             item.classList.add('active'); document.getElementById('entryBtn').disabled = false;
         };
         container.appendChild(item);
+    });
+}
+
+// 試聽邏輯：播放前 5 個音符
+function previewMelody(track) {
+    if(!audioCtx) audioCtx = new AudioContext();
+    const now = audioCtx.currentTime;
+    track.notes.slice(0, 5).forEach((n, i) => {
+        const osc = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        const freq = 440 * Math.pow(2, (n.midi - 69) / 12);
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, now + i * 0.25);
+        g.gain.setValueAtTime(0.15, now + i * 0.25);
+        g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.25 + 0.2);
+        osc.connect(g); g.connect(audioCtx.destination);
+        osc.start(now + i * 0.25); osc.stop(now + i * 0.25 + 0.2);
     });
 }
 
@@ -228,7 +250,7 @@ function handleRecording() {
         chunks = [];
         const stream = canvas.captureStream(30);
         const combined = new MediaStream([...stream.getTracks(), ...audioDest.stream.getTracks()]);
-        recorder = new MediaRecorder(combined, { mimeType: 'video/webm;codecs=vp8', videoBitsPerSecond: 5000000 });
+        recorder = new MediaRecorder(combined, { mimeType: 'video/webm;codecs=vp8', videoBitsPerSecond: 6000000 });
         recorder.ondataavailable = e => { if(e.data.size > 0) chunks.push(e.data); };
         recorder.onstop = saveVideo;
         recorder.start(1000); 
@@ -251,18 +273,15 @@ function triggerEndSequence() {
     recBtn.classList.remove('is-recording');
     recBtn.classList.add('is-saving');
 
-    // 💡 解決關鍵：連續強制刷新數據 5 秒鐘
     let flushCount = 0;
     const flusher = setInterval(() => {
         if (recorder && recorder.state === 'recording') {
-            recorder.requestData(); // 強制抓取目前的 Ending 畫面
+            recorder.requestData(); 
         }
         flushCount++;
-        if (flushCount >= 10) { // 每 0.5 秒刷一次，共 5 秒
+        if (flushCount >= 10) { 
             clearInterval(flusher);
-            if (recorder && recorder.state !== 'inactive') {
-                recorder.stop();
-            }
+            setTimeout(() => { if (recorder && recorder.state !== 'inactive') recorder.stop(); }, 500);
         }
     }, 500);
 }
@@ -270,7 +289,7 @@ function triggerEndSequence() {
 function saveVideo() {
     const blob = new Blob(chunks, { type: 'video/webm' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = `mario_verified_end_${Date.now()}.webm`; a.click();
+    a.download = `mario_preview_fixed_${Date.now()}.webm`; a.click();
     setTimeout(() => location.reload(), 2500);
 }
 </script>
