@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴工坊 - 完美收尾版</title>
+    <title>AI 木琴工坊 - 錄影修正版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --panel: rgba(15, 23, 42, 0.98); }
@@ -14,10 +14,9 @@
         .track-item { padding: 10px; margin-bottom: 5px; background: #1e293b; border-radius: 6px; cursor: pointer; font-size: 12px; }
         .track-item.active { background: var(--accent); border: 1px solid #fff; }
         .record-ui { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; display: none; gap: 10px; background: var(--panel); padding: 10px 25px; border-radius: 50px; border: 1px solid #3b82f6; }
-        .ctrl-btn { border: none; padding: 10px 25px; border-radius: 20px; cursor: pointer; font-weight: bold; transition: all 0.3s; }
+        .ctrl-btn { border: none; padding: 10px 25px; border-radius: 20px; cursor: pointer; font-weight: bold; }
         #playBtn { background: #10b981; color: white; }
         #recBtn { background: #ef4444; color: white; }
-        #recBtn.is-recording { background: #f59e0b; color: #000; }
         input { width: 100%; padding: 12px; margin-bottom: 10px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: #fff; box-sizing: border-box; }
         .btn { width: 100%; padding: 15px; border-radius: 10px; background: var(--accent); color: white; border:none; font-weight: bold; cursor:pointer; }
         .btn:disabled { opacity: 0.3; }
@@ -27,15 +26,15 @@
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="margin:0;">🎬 完美展演設定</h2>
-        <div class="section-title">1. MIDI 軌道 (預載 Mario)</div>
+        <h2 style="margin:0;">🎬 完美錄影版</h2>
+        <div class="section-title">1. MIDI 軌道</div>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleMidiUpload(this)">
         <div id="trackContainer" class="track-list">讀取中...</div>
-        <div class="section-title">2. 廊道照片</div>
+        <div class="section-title">2. 廊道照片 (必選幾張以利測試)</div>
         <input type="file" id="galleryFiles" multiple accept="image/*">
         <div class="section-title">3. 結束留言</div>
-        <input type="text" id="msgInit" value="Performance Complete!">
-        <button id="entryBtn" class="btn" onclick="enterScene()" disabled>確認並進入場景</button>
+        <input type="text" id="msgInit" value="Fantastic! 終">
+        <button id="entryBtn" class="btn" onclick="enterScene()" disabled>確認進入</button>
     </div>
 </div>
 
@@ -49,8 +48,7 @@
 <script>
 const CONFIG = {
     GRAVITY: 1.2, BALL_VX: 5.2, BOUNCE_UP: -0.5, STEP_Y_GAP: 15,
-    TIME_SCALE: 310, BALL_R: 10, 
-    SAVE_DELAY: 2500 // 停留 2.5 秒確保錄到結束畫面
+    TIME_SCALE: 310, BALL_R: 10, SAVE_DELAY: 3000 
 };
 
 const canvas = document.getElementById('stage');
@@ -67,14 +65,13 @@ function initAudio() {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         audioDest = audioCtx.createMediaStreamDestination();
     }
-    if (audioCtx.state === 'suspended') audioCtx.resume();
 }
 
 window.addEventListener('load', async () => {
     try {
         const res = await fetch('Mario Bros. - Super Mario Bros. Theme.mid');
         if (res.ok) parseMidi(await res.arrayBuffer());
-    } catch (e) { document.getElementById('trackContainer').innerText = "請手動上傳 MIDI"; }
+    } catch (e) { document.getElementById('trackContainer').innerText = "請上傳 MIDI"; }
 });
 
 function parseMidi(buf) {
@@ -85,9 +82,8 @@ function parseMidi(buf) {
         if(t.notes.length === 0) return;
         const item = document.createElement('div');
         item.className = "track-item";
-        item.innerText = `音軌 ${i+1} (${t.notes.length} 音符)`;
+        item.innerText = `軌道 ${i+1} (${t.notes.length} 音符)`;
         item.onclick = () => {
-            initAudio();
             selectedTrackIdx = i;
             document.querySelectorAll('.track-item').forEach(e => e.classList.remove('active'));
             item.classList.add('active');
@@ -108,15 +104,15 @@ async function enterScene() {
     buildSteps(fullMidi.tracks[selectedTrackIdx]);
     
     const gFiles = document.getElementById('galleryFiles').files;
-    const steps = tracks[0].steps;
-    for (let i = 0; i < gFiles.length; i++) {
-        const img = new Image(); img.src = URL.createObjectURL(gFiles[i]);
-        await new Promise(r => img.onload = r);
-        const targetIdx = Math.floor((i / gFiles.length) * (steps.length - 1));
-        const s = steps[targetIdx];
-        gallery.push({ img, x: s.x + 180, y: s.y - 350, w: 320 });
+    if(gFiles.length > 0) {
+        const steps = tracks[0].steps;
+        for (let i = 0; i < gFiles.length; i++) {
+            const img = new Image(); img.src = URL.createObjectURL(gFiles[i]);
+            await new Promise(r => img.onload = r);
+            const targetIdx = Math.floor((i / gFiles.length) * (steps.length - 1));
+            gallery.push({ img, x: steps[targetIdx].x + 180, y: steps[targetIdx].y - 350, w: 320 });
+        }
     }
-
     document.getElementById('setupPanel').style.display = 'none';
     document.getElementById('recordUI').style.display = 'flex';
     isRunning = true;
@@ -127,68 +123,61 @@ function buildSteps(track) {
     track.notes.forEach((n, i) => {
         let x = n.time * CONFIG.TIME_SCALE;
         let w = n.duration * CONFIG.TIME_SCALE;
-        if (i > 0) {
-            let gap = x - (steps[i-1].x + steps[i-1].w);
-            if (gap > 10) steps[i-1].w += (gap - 2); 
-        }
         currentY += CONFIG.STEP_Y_GAP;
         const hue = (n.midi * 15) % 360;
-        steps.push({ x, y: currentY, w, freq: 440*Math.pow(2,(n.midi-69)/12), color: `hsla(${hue}, 75%, 60%, 0.8)`, active: 0, flash: 0 });
+        steps.push({ x, y: currentY, w, freq: 440*Math.pow(2,(n.midi-69)/12), color: `hsla(${hue}, 70%, 55%, 0.8)`, active: 0, flash: 0 });
     });
     tracks = [{ steps, ball: { x: steps[0].x + 5, y: steps[0].y - CONFIG.BALL_R, vx: CONFIG.BALL_VX, vy: 0 }, cur: 0 }];
 }
 
-function togglePlay() {
-    isBallMoving = !isBallMoving;
-    document.getElementById('playBtn').innerText = isBallMoving ? "⏸ 暫停" : "▶ 播放";
-}
+function togglePlay() { isBallMoving = !isBallMoving; }
 
-// --- 錄影控制與完美收尾 ---
 function handleRecClick() {
-    if (!isRecording) {
-        startRecording();
-    } else {
-        triggerFinish();
-    }
+    if (!isRecording) startRecording();
+    else triggerFinish();
 }
 
 function startRecording() {
-    initAudio();
     chunks = [];
-    const stream = new MediaStream([...canvas.captureStream(60).getTracks(), ...audioDest.stream.getTracks()]);
-    const mimeType = ['video/mp4', 'video/webm;codecs=vp9'].find(m => MediaRecorder.isTypeSupported(m));
+    const stream = canvas.captureStream(60); 
+    stream.addTrack(audioDest.stream.getAudioTracks()[0]);
     
-    recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 12000000 });
-    recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+    const mimeType = MediaRecorder.isTypeSupported('video/mp4') ? 'video/mp4' : 'video/webm;codecs=vp9';
+    recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 15000000 });
+    
+    recorder.ondataavailable = e => chunks.push(e.data);
     recorder.onstop = () => {
-        const ext = recorder.mimeType.includes('mp4') ? 'mp4' : 'webm';
         const blob = new Blob(chunks, { type: recorder.mimeType });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = `performance_${Date.now()}.${ext}`;
+        a.download = `final_perf_${Date.now()}.mp4`;
         a.click();
-        setTimeout(() => location.reload(), 1000);
+        setTimeout(() => location.reload(), 1500);
     };
-    recorder.start(200);
+    recorder.start();
     isRecording = true;
-    const btn = document.getElementById('recBtn');
-    btn.innerText = "⏹ 結束存檔";
-    btn.classList.add('is-recording');
+    document.getElementById('recBtn').innerText = "⏹ 結束並存檔";
+    document.getElementById('recBtn').style.background = "#f59e0b";
 }
 
 function triggerFinish() {
     if (isFinishing) return;
     isFinishing = true;
-    isBallMoving = false;
+    isBallMoving = false; // 讓球消失
     
-    document.getElementById('recBtn').innerText = "⌛ 處理影片...";
+    document.getElementById('recBtn').innerText = "⌛ 正在存檔...";
     document.getElementById('recBtn').disabled = true;
 
-    // 關鍵：等待 2.5 秒後才真正停止 MediaRecorder，確保留言板被錄進去
-    if (isRecording && recorder.state === 'recording') {
-        setTimeout(() => {
-            recorder.stop();
-        }, CONFIG.SAVE_DELAY);
+    // 強制在 finishAlpha 滿了之後再多留 2 秒
+    if (isRecording) {
+        const checkDone = setInterval(() => {
+            if (finishAlpha >= 1) {
+                clearInterval(checkDone);
+                setTimeout(() => {
+                    recorder.stop();
+                }, 2000); // 看到留言板後再錄 2 秒
+            }
+        }, 100);
     }
 }
 
@@ -197,28 +186,23 @@ function update() {
     const t = tracks[0], b = t.ball;
     b.vy += CONFIG.GRAVITY; b.x += b.vx; b.y += b.vy;
     
-    if (t.cur >= t.steps.length) {
-        triggerFinish();
-        return;
-    }
+    if (t.cur >= t.steps.length) { triggerFinish(); return; }
 
     let s = t.steps[t.cur];
-    if (s && b.x >= s.x && b.x <= s.x + s.w) {
-        if (b.y + CONFIG.BALL_R >= s.y && b.y + CONFIG.BALL_R <= s.y + 25 && b.vy >= 0) {
-            b.y = s.y - CONFIG.BALL_R; b.vy = CONFIG.BOUNCE_UP;
-            if (!s.active) {
-                const osc = audioCtx.createOscillator();
-                const g = audioCtx.createGain();
-                osc.type = 'triangle'; osc.frequency.setValueAtTime(s.freq, audioCtx.currentTime);
-                g.gain.setValueAtTime(0, audioCtx.currentTime);
-                g.gain.linearRampToValueAtTime(0.3, audioCtx.currentTime + 0.01);
-                g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
-                osc.connect(g); g.connect(audioCtx.destination);
-                const g2 = audioCtx.createGain(); g2.gain.value = 0.3;
-                osc.connect(g2); g2.connect(audioDest);
-                osc.start(); osc.stop(audioCtx.currentTime + 0.6);
-                s.active = 1; s.flash = 1.0;
-            }
+    if (s && b.x >= s.x && b.x <= s.x + s.w && b.y + CONFIG.BALL_R >= s.y && b.vy >= 0) {
+        b.y = s.y - CONFIG.BALL_R; b.vy = CONFIG.BOUNCE_UP;
+        if (!s.active) {
+            const osc = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            osc.type = 'triangle'; osc.frequency.setValueAtTime(s.freq, audioCtx.currentTime);
+            g.gain.setValueAtTime(0, audioCtx.currentTime);
+            g.gain.linearRampToValueAtTime(0.3, audioCtx.currentTime + 0.01);
+            g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
+            osc.connect(g); g.connect(audioCtx.destination);
+            const g2 = audioCtx.createGain(); g2.gain.value = 0.3;
+            osc.connect(g2); g2.connect(audioDest);
+            osc.start(); osc.stop(audioCtx.currentTime + 0.6);
+            s.active = 1; s.flash = 1.0;
         }
     }
     if (s && b.x > s.x + s.w) t.cur++; 
@@ -233,12 +217,7 @@ function draw() {
     
     gallery.forEach(item => {
         const h = item.w * (item.img.height / item.img.width);
-        const border = 14;
-        ctx.fillStyle = "#451a03"; 
-        ctx.fillRect(item.x - border, item.y - border, item.w + border * 2, h + border * 2);
-        ctx.strokeStyle = "#c2410c"; 
-        ctx.lineWidth = 2;
-        ctx.strokeRect(item.x - border + 2, item.y - border + 2, item.w + border * 2 - 4, h + border * 2 - 4);
+        ctx.fillStyle = "#451a03"; ctx.fillRect(item.x-14, item.y-14, item.w+28, h+28);
         ctx.drawImage(item.img, item.x, item.y, item.w, h);
     });
 
@@ -246,10 +225,7 @@ function draw() {
         tracks[0].steps.forEach(s => {
             ctx.fillStyle = s.color;
             ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, 10, 5); ctx.fill();
-            if(s.flash > 0) {
-                ctx.fillStyle = `rgba(255,255,255,${s.flash})`;
-                ctx.fill(); s.flash *= 0.9;
-            }
+            if(s.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${s.flash})`; ctx.fill(); s.flash *= 0.9; }
         });
         if (!isFinishing) {
             const b = tracks[0].ball;
@@ -259,16 +235,14 @@ function draw() {
     ctx.restore();
     
     if (isFinishing) {
-        finishAlpha = Math.min(finishAlpha + 0.02, 1);
-        ctx.fillStyle = `rgba(0,0,0,${finishAlpha * 0.85})`;
+        finishAlpha = Math.min(finishAlpha + 0.015, 1);
+        ctx.fillStyle = `rgba(0,0,0,${finishAlpha * 0.9})`;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.save();
         ctx.globalAlpha = finishAlpha;
         ctx.fillStyle = "white"; ctx.font = "bold 50px sans-serif"; ctx.textAlign = "center";
         ctx.fillText(currentMsg, canvas.width/2, canvas.height/2);
-        if (cornerImg.complete) {
-            ctx.drawImage(cornerImg, canvas.width/2 - 100, canvas.height/2 + 50, 200, 200);
-        }
+        if (cornerImg.complete) ctx.drawImage(cornerImg, canvas.width/2 - 100, canvas.height/2 + 60, 200, 200);
         ctx.restore();
     }
     update();
