@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>木琴工坊 - First Step Anchor</title>
+    <title>木琴工坊 - Staircase Rolling</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --success: #10b981; }
@@ -25,12 +25,12 @@
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="text-align:center; margin:0 0 15px 0;">🎹 翻牌木琴 Pro</h2>
-        <div id="trackContainer" class="track-list">讀取 MIDI 中...</div>
+        <h2 style="text-align:center; margin:0 0 15px 0;">🎹 階梯木琴 Pro</h2>
+        <div id="trackContainer" class="track-list">載入 MIDI 中...</div>
         <input type="file" id="galleryFiles" multiple accept="image/*" onchange="previewImages(this)">
         <div id="photoPreview" style="display:grid; grid-template-columns:repeat(4,1fr); gap:5px; margin-top:10px;"></div>
-        <input type="text" id="msgInit" value="Musical Journey">
-        <button id="entryBtn" class="primary-btn" onclick="enterScene()" disabled>開始演奏</button>
+        <input type="text" id="msgInit" value="Stairway to Melody">
+        <button id="entryBtn" class="primary-btn" onclick="enterScene()" disabled>確認開始</button>
     </div>
 </div>
 
@@ -54,7 +54,7 @@ class FlipBoard {
         ctx.translate(this.x + this.w / 2, this.y);
         ctx.scale(1, Math.cos(this.angle));
         ctx.fillStyle = this.active ? "#fff" : this.color;
-        ctx.beginPath(); ctx.roundRect(-this.w / 2, -this.h / 2, this.w, this.h, 5); ctx.fill();
+        ctx.beginPath(); ctx.roundRect(-this.w / 2, -this.h / 2, this.w, this.h, 4); ctx.fill();
         ctx.restore();
         if (this.isFlipping) {
             this.angle += 0.15;
@@ -71,16 +71,16 @@ let camX = 0, camY = 0, recorder, chunks = [], audioDest, selectedTrackData = nu
 let isFinishing = false, isRecording = false, lastTime = 0;
 
 const cornerImg = new Image(); cornerImg.src = 'IMG_6604.png';
-const GRAVITY = 3600, BALL_VX = 380, BOUNCE_UP = -1050, BALL_R = 12;
-const NOTE_COLORS = ["#FF5252", "#FF4081", "#E040FB", "#7C4DFF", "#536DFE", "#448AFF", "#40C4FF", "#18FFFF", "#64FFDA", "#69F0AE", "#B2FF59", "#EEFF41"];
+const GRAVITY = 4500, BALL_VX = 380, MIN_ROLL_UP = -40, BALL_R = 12;
 
 canvas.width = window.innerWidth; canvas.height = window.innerHeight;
 
+// 預設 MIDI 載入邏輯
 window.addEventListener('load', async () => {
     try {
         const res = await fetch('Mario Bros. - Super Mario Bros. Theme.mid');
         if (res.ok) processMidiBuffer(await res.arrayBuffer());
-    } catch (e) { document.getElementById('trackContainer').innerText = "MIDI 載入失敗"; }
+    } catch (e) { document.getElementById('trackContainer').innerText = "請手動上傳 MIDI"; }
 });
 
 function processMidiBuffer(buf) {
@@ -130,16 +130,27 @@ async function enterScene() {
 }
 
 function buildSteps(track) {
-    let steps = [], startY = canvas.height * 0.5;
+    let steps = [], startY = canvas.height * 0.4;
     let notes = track.notes.sort((a,b) => a.time - b.time);
+    
     notes.forEach((n, i) => {
-        steps.push(new FlipBoard(n.time * BALL_VX, startY + (i * 20), Math.max(n.duration * BALL_VX, 60), 15, 440*Math.pow(2,(n.midi-69)/12), NOTE_COLORS[n.midi % 12]));
+        const NOTE_COLORS = ["#FF5252", "#FF4081", "#E040FB", "#7C4DFF", "#536DFE", "#448AFF", "#40C4FF", "#18FFFF", "#64FFDA", "#69F0AE", "#B2FF59", "#EEFF41"];
+        
+        /** * 💡 階梯化排列原則：
+         * X 軸：使用時間偏移，但確保每塊板子與前一塊至少有 BALL_R (12px) 的間隙。
+         * Y 軸：強制逐階下行 (+25px)，形成下樓梯視覺。
+         */
+        const boardW = Math.max(n.duration * BALL_VX, 60);
+        const xPos = n.time * BALL_VX;
+        const yPos = startY + (i * 25); // 固定下階梯高度
+        
+        steps.push(new FlipBoard(xPos, yPos, boardW, 14, 440*Math.pow(2,(n.midi-69)/12), NOTE_COLORS[n.midi % 12]));
     });
+
     const fS = steps[0];
-    // 💡 加固：isWaitingForFirst 確保球在撞到第一個音板前不會下墜
     tracks = [{ 
         steps, 
-        ball: { x: fS.x - 400, y: fS.y - BALL_R, vx: BALL_VX, vy: 0, rotation: 0 }, 
+        ball: { x: fS.x - 300, y: fS.y - BALL_R, vx: BALL_VX, vy: 0, rotation: 0 }, 
         cur: 0, 
         isWaitingForFirst: true 
     }];
@@ -154,17 +165,13 @@ function loop(timestamp) {
             let prevY = b.y;
 
             if (t.isWaitingForFirst) {
-                // 平行滑動模式：無視重力
                 b.x += b.vx * dt;
                 b.rotation += (b.vx * dt) / BALL_R;
                 if (b.x >= t.steps[0].x) {
-                    b.x = t.steps[0].x;
-                    t.isWaitingForFirst = false;
-                    hitStep(t.steps[0]);
-                    b.vy = -100; // 啟動滾動微力
+                    b.x = t.steps[0].x; t.isWaitingForFirst = false;
+                    hitStep(t.steps[0]); b.vy = 0;
                 }
             } else {
-                // 標準物理模式
                 b.vy += GRAVITY * dt;
                 b.x += b.vx * dt;
                 b.y += b.vy * dt;
@@ -172,16 +179,17 @@ function loop(timestamp) {
 
                 for (let i = t.cur; i < Math.min(t.cur + 8, t.steps.length); i++) {
                     let s = t.steps[i];
-                    if (b.x >= s.x && b.x <= s.x + s.w && prevY + BALL_R <= s.y + 10 && b.y + BALL_R >= s.y) {
+                    // 偵測碰撞：調整判定高度以符合「滾下階梯」的流暢度
+                    if (b.x >= s.x && b.x <= s.x + s.w && prevY + BALL_R <= s.y + 15 && b.y + BALL_R >= s.y) {
                         b.y = s.y - BALL_R;
-                        b.vy = (Math.abs(b.vy) < 250) ? -100 : BOUNCE_UP;
+                        b.vy = MIN_ROLL_UP; // 極低反彈，實現滾動感
                         if (t.cur !== i) { hitStep(s); t.cur = i; }
                         break;
                     }
                 }
             }
 
-            if (t.cur >= t.steps.length - 1 && b.y > t.steps[t.steps.length-1].y + 500) triggerEndSequence();
+            if (t.cur >= t.steps.length - 1 && b.y > t.steps[t.steps.length-1].y + 600) triggerEndSequence();
             camX += (b.x - canvas.width * 0.25 - camX) * 0.1;
             camY += (b.y - canvas.height * 0.55 - camY) * 0.1;
         }
@@ -262,7 +270,7 @@ function togglePlay() { isBallMoving = !isBallMoving; document.getElementById('p
 function saveVideo() {
     const blob = new Blob(chunks, { type: 'video/mp4' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = `stable_harmony_${Date.now()}.mp4`; a.click();
+    a.download = `staircase_harmony_${Date.now()}.mp4`; a.click();
     setTimeout(() => location.reload(), 2000);
 }
 </script>
