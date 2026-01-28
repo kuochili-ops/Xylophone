@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>木琴工坊 - Smooth Rolling</title>
+    <title>木琴工坊 - First Step Anchor</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --success: #10b981; }
@@ -17,7 +17,6 @@
         .btn-main { width: 75px; height: 75px; border-radius: 50%; border: none; font-weight: bold; color: white; cursor: pointer; }
         #playBtn { background: var(--success); }
         #recBtn { background: #ef4444; border: 4px solid #fff; }
-        #recBtn.is-recording { border-radius: 12px; }
         input, .primary-btn { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #334155; background: #0f172a; color: #fff; margin-bottom: 10px; box-sizing: border-box; }
         .primary-btn { background: var(--accent); font-weight: bold; cursor: pointer; padding: 18px; }
     </style>
@@ -27,13 +26,11 @@
 <div id="setupPanel">
     <div class="config-card">
         <h2 style="text-align:center; margin:0 0 15px 0;">🎹 翻牌木琴 Pro</h2>
-        <label style="font-size: 12px; color: #94a3b8;">1. MIDI 選擇 (預設已載入 Mario)</label>
-        <div id="trackContainer" class="track-list">正在載入...</div>
-        <label style="font-size: 12px; color: #94a3b8;">2. 廊道照片</label>
+        <div id="trackContainer" class="track-list">讀取 MIDI 中...</div>
         <input type="file" id="galleryFiles" multiple accept="image/*" onchange="previewImages(this)">
-        <div id="photoPreview"></div>
-        <input type="text" id="msgInit" value="Fantastic Harmony!">
-        <button id="entryBtn" class="primary-btn" onclick="enterScene()" disabled>確認開始</button>
+        <div id="photoPreview" style="display:grid; grid-template-columns:repeat(4,1fr); gap:5px; margin-top:10px;"></div>
+        <input type="text" id="msgInit" value="Musical Journey">
+        <button id="entryBtn" class="primary-btn" onclick="enterScene()" disabled>開始演奏</button>
     </div>
 </div>
 
@@ -74,7 +71,7 @@ let camX = 0, camY = 0, recorder, chunks = [], audioDest, selectedTrackData = nu
 let isFinishing = false, isRecording = false, lastTime = 0;
 
 const cornerImg = new Image(); cornerImg.src = 'IMG_6604.png';
-const GRAVITY = 3600, BALL_VX = 380, BOUNCE_UP = -1050, BALL_R = 12; // 稍微減弱反彈力
+const GRAVITY = 3600, BALL_VX = 380, BOUNCE_UP = -1050, BALL_R = 12;
 const NOTE_COLORS = ["#FF5252", "#FF4081", "#E040FB", "#7C4DFF", "#536DFE", "#448AFF", "#40C4FF", "#18FFFF", "#64FFDA", "#69F0AE", "#B2FF59", "#EEFF41"];
 
 canvas.width = window.innerWidth; canvas.height = window.innerHeight;
@@ -83,7 +80,7 @@ window.addEventListener('load', async () => {
     try {
         const res = await fetch('Mario Bros. - Super Mario Bros. Theme.mid');
         if (res.ok) processMidiBuffer(await res.arrayBuffer());
-    } catch (e) { document.getElementById('trackContainer').innerText = "請上傳 MIDI"; }
+    } catch (e) { document.getElementById('trackContainer').innerText = "MIDI 載入失敗"; }
 });
 
 function processMidiBuffer(buf) {
@@ -107,10 +104,10 @@ function processMidiBuffer(buf) {
 
 function previewImages(input) {
     const container = document.getElementById('photoPreview'); container.innerHTML = "";
-    Array.from(input.files).slice(0, 10).forEach(file => {
+    Array.from(input.files).slice(0, 8).forEach(file => {
         const img = document.createElement('img'); img.src = URL.createObjectURL(file);
-        const div = document.createElement('div'); div.className = 'photo-thumb';
-        div.appendChild(img); container.appendChild(div);
+        img.style.width="100%"; img.style.aspectRatio="1"; img.style.objectFit="cover"; img.style.borderRadius="4px";
+        container.appendChild(img);
     });
 }
 
@@ -139,12 +136,12 @@ function buildSteps(track) {
         steps.push(new FlipBoard(n.time * BALL_VX, startY + (i * 20), Math.max(n.duration * BALL_VX, 60), 15, 440*Math.pow(2,(n.midi-69)/12), NOTE_COLORS[n.midi % 12]));
     });
     const fS = steps[0];
-    // 💡 修正：球的高度精確貼合第一個音板表面， vy 設為 0 以啟動「滾動模式」
+    // 💡 加固：isWaitingForFirst 確保球在撞到第一個音板前不會下墜
     tracks = [{ 
         steps, 
-        ball: { x: fS.x - 450, y: fS.y - BALL_R, vx: BALL_VX, vy: 0, rotation: 0 }, 
+        ball: { x: fS.x - 400, y: fS.y - BALL_R, vx: BALL_VX, vy: 0, rotation: 0 }, 
         cur: 0, 
-        isRolling: true // 初始狀態設為滾動
+        isWaitingForFirst: true 
     }];
 }
 
@@ -156,28 +153,31 @@ function loop(timestamp) {
             const t = tracks[0], b = t.ball;
             let prevY = b.y;
 
-            // 物理演算：模擬滾動 vs 跳躍
-            b.vy += GRAVITY * dt;
-            b.x += b.vx * dt;
-            b.y += b.vy * dt;
-            b.rotation += (b.vx * dt) / BALL_R;
+            if (t.isWaitingForFirst) {
+                // 平行滑動模式：無視重力
+                b.x += b.vx * dt;
+                b.rotation += (b.vx * dt) / BALL_R;
+                if (b.x >= t.steps[0].x) {
+                    b.x = t.steps[0].x;
+                    t.isWaitingForFirst = false;
+                    hitStep(t.steps[0]);
+                    b.vy = -100; // 啟動滾動微力
+                }
+            } else {
+                // 標準物理模式
+                b.vy += GRAVITY * dt;
+                b.x += b.vx * dt;
+                b.y += b.vy * dt;
+                b.rotation += (b.vx * dt) / BALL_R;
 
-            for (let i = t.cur; i < Math.min(t.cur + 8, t.steps.length); i++) {
-                let s = t.steps[i];
-                // 碰撞判定優化：減少垂直反彈，增加水平黏滯感
-                if (b.x >= s.x && b.x <= s.x + s.w && prevY + BALL_R <= s.y + 10 && b.y + BALL_R >= s.y) {
-                    b.y = s.y - BALL_R;
-                    
-                    // 如果高度落差極小 (滾動中)，給予極小的向上力維持滾動質感
-                    // 如果落差大於 10px，才執行 BOUNCE_UP 跳躍
-                    if (Math.abs(b.vy) < 200) {
-                        b.vy = -100; // 微弱向上力避免卡住，模擬平滑滾動
-                    } else {
-                        b.vy = BOUNCE_UP;
+                for (let i = t.cur; i < Math.min(t.cur + 8, t.steps.length); i++) {
+                    let s = t.steps[i];
+                    if (b.x >= s.x && b.x <= s.x + s.w && prevY + BALL_R <= s.y + 10 && b.y + BALL_R >= s.y) {
+                        b.y = s.y - BALL_R;
+                        b.vy = (Math.abs(b.vy) < 250) ? -100 : BOUNCE_UP;
+                        if (t.cur !== i) { hitStep(s); t.cur = i; }
+                        break;
                     }
-                    
-                    if (t.cur !== i) { hitStep(s); t.cur = i; }
-                    break;
                 }
             }
 
@@ -254,7 +254,6 @@ function handleRecording() {
         recorder.ondataavailable = e => { if(e.data.size > 0) chunks.push(e.data); };
         recorder.onstop = saveVideo; recorder.start(100);
         isRecording = true; document.getElementById('recBtn').innerText = "STOP";
-        document.getElementById('recBtn').classList.add('is-recording');
     } else triggerEndSequence();
 }
 
@@ -263,7 +262,7 @@ function togglePlay() { isBallMoving = !isBallMoving; document.getElementById('p
 function saveVideo() {
     const blob = new Blob(chunks, { type: 'video/mp4' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = `rolling_harmony_${Date.now()}.mp4`; a.click();
+    a.download = `stable_harmony_${Date.now()}.mp4`; a.click();
     setTimeout(() => location.reload(), 2000);
 }
 </script>
