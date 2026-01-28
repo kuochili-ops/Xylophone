@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴工坊 - 軌道試聽版</title>
+    <title>AI 木琴工坊 - 速度優化版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --panel: rgba(15, 23, 42, 0.98); }
@@ -27,14 +27,14 @@
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="margin:0;">🎵 軌道試聽選擇</h2>
-        <div class="section-title">1. 上傳或選擇 MIDI (點擊軌道試聽)</div>
+        <h2 style="margin:0;">🎵 速度調整版 (0.9x)</h2>
+        <div class="section-title">1. MIDI 軌道 (點擊試聽)</div>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleMidiUpload(this)">
         <div id="trackContainer" class="track-list">讀取音樂中...</div>
         <div class="section-title">2. 照片廊道 (多選)</div>
         <input type="file" id="galleryFiles" multiple accept="image/*">
         <div class="section-title">3. 結束留言</div>
-        <input type="text" id="msgInit" value="Fantastic Show! 終">
+        <input type="text" id="msgInit" value="Wonderful Performance! 終">
         <button id="entryBtn" class="btn" onclick="enterScene()" disabled>確認並進入</button>
     </div>
 </div>
@@ -47,7 +47,16 @@
 <canvas id="stage"></canvas>
 
 <script>
-const CONFIG = { GRAVITY: 1.2, BALL_VX: 5.2, BOUNCE_UP: -0.6, STEP_Y_GAP: 15, TIME_SCALE: 320, BALL_R: 10 };
+// 物理參數調優為 0.9x
+const CONFIG = { 
+    GRAVITY: 1.1,        // 稍微降低重力讓球跳得更自然
+    BALL_VX: 4.68,       // 原始 5.2 * 0.9
+    BOUNCE_UP: -0.6, 
+    STEP_Y_GAP: 15, 
+    TIME_SCALE: 288,     // 原始 320 * 0.9
+    BALL_R: 10 
+};
+
 const canvas = document.getElementById('stage');
 const ctx = canvas.getContext('2d', { alpha: false });
 let audioCtx, tracks = [], isRunning = false, isBallMoving = false, fullMidi, gallery = [];
@@ -88,19 +97,16 @@ function parseMidi(buf) {
             document.querySelectorAll('.track-item').forEach(e => e.classList.remove('active'));
             item.classList.add('active');
             document.getElementById('entryBtn').disabled = false;
-            previewTrack旋律(t); // 觸發試聽
+            previewTrack旋律(t);
         };
         container.appendChild(item);
     });
 }
 
-// 試聽特定軌道的邏輯
 function previewTrack旋律(track) {
     if (previewTimeout) { clearTimeout(previewTimeout); }
-    // 建立一個臨時的試聽播放
     const now = audioCtx.currentTime;
-    const previewNotes = track.notes.slice(0, 15); // 只試聽前 15 個音符
-    
+    const previewNotes = track.notes.slice(0, 15);
     previewNotes.forEach(n => {
         const osc = audioCtx.createOscillator();
         const g = audioCtx.createGain();
