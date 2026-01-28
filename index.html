@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴工坊 - 靜謐慢速版</title>
+    <title>AI 木琴工坊 - 平緩長廊版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --panel: rgba(15, 23, 42, 0.98); }
@@ -26,33 +26,33 @@
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="margin:0;">🌌 靜謐慢速版 (X 0.7)</h2>
+        <h2 style="margin:0;">🛤️ 平緩長廊展演</h2>
         <div class="section-title">1. MIDI 軌道 (預設已載入)</div>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleMidiUpload(this)">
-        <div id="trackContainer" class="track-list">正在加載預設旋律...</div>
+        <div id="trackContainer" class="track-list">讀取中...</div>
         <div class="section-title">2. 照片廊道 (多選)</div>
         <input type="file" id="galleryFiles" multiple accept="image/*">
         <div class="section-title">3. 結束留言</div>
-        <input type="text" id="msgInit" value="A Peaceful Journey. 終">
+        <input type="text" id="msgInit" value="A Level Journey. 終">
         <button id="entryBtn" class="btn" onclick="enterScene()" disabled>確認並進入</button>
     </div>
 </div>
 
 <div class="record-ui" id="recordUI">
-    <button id="playBtn" class="ctrl-btn" onclick="togglePlay()">▶ 播放演奏</button>
-    <button id="recBtn" class="ctrl-btn" onclick="handleRecClick()">🔴 啟動錄製</button>
+    <button id="playBtn" class="ctrl-btn" onclick="togglePlay()">▶ 播放</button>
+    <button id="recBtn" class="ctrl-btn" onclick="handleRecClick()">🔴 錄製</button>
 </div>
 
 <canvas id="stage"></canvas>
 
 <script>
-// 再次乘以 0.7 後的參數
+// 斜率大幅減少後的參數
 const TIME_SCALE = 98; 
 const CONFIG = { 
-    GRAVITY: 0.35,          // 更低重力配合慢速
+    GRAVITY: 0.35, 
     BALL_VX: TIME_SCALE / 60, 
-    BOUNCE_UP: -0.35, 
-    STEP_Y_GAP: 15, 
+    BOUNCE_UP: -0.3,         // 減小彈力以適應低坡度
+    STEP_Y_GAP: 5,          // 斜率從 15 降至 5
     TIME_SCALE: TIME_SCALE,     
     BALL_R: 10 
 };
@@ -71,7 +71,7 @@ const DEFAULT_MIDI_DATA = [
     { time: 0, midi: 76, duration: 0.1 }, { time: 0.2, midi: 76, duration: 0.1 },
     { time: 0.4, midi: 76, duration: 0.1 }, { time: 0.6, midi: 72, duration: 0.1 },
     { time: 0.7, midi: 76, duration: 0.1 }, { time: 0.9, midi: 79, duration: 0.2 },
-    { time: 1.3, midi: 67, duration: 0.2 }
+    { time: 1.3, midi: 67, duration: 0.2 }, { time: 1.8, midi: 76, duration: 0.2 }
 ];
 
 async function ensureAudioStarted() {
@@ -91,7 +91,7 @@ window.addEventListener('load', async () => {
 
 function loadDefaultMelody() {
     const container = document.getElementById('trackContainer');
-    container.innerHTML = `<div class="track-item active" id="defaultTrack"><span>預設旋律 (Mario Theme)</span></div>`;
+    container.innerHTML = `<div class="track-item active" id="defaultTrack"><span>預設旋律 (Mario Fragment)</span></div>`;
     selectedTrackIdx = 999;
     document.getElementById('entryBtn').disabled = false;
     document.getElementById('defaultTrack').onclick = () => {
@@ -163,7 +163,7 @@ async function enterScene() {
         const img = new Image(); img.src = URL.createObjectURL(gFiles[i]);
         await new Promise(r => img.onload = r);
         const targetIdx = Math.floor((i / gFiles.length) * (steps.length - 1));
-        gallery.push({ img, x: steps[targetIdx].x + 150, y: steps[targetIdx].y - 350, w: 300 });
+        gallery.push({ img, x: steps[targetIdx].x + 150, y: steps[targetIdx].y - 250, w: 300 });
     }
     document.getElementById('setupPanel').style.display = 'none';
     document.getElementById('recordUI').style.display = 'flex';
@@ -171,7 +171,7 @@ async function enterScene() {
 }
 
 function buildSteps(track) {
-    let steps = [], currentY = 300;
+    let steps = [], currentY = 400; // 稍微調高起始位置
     const notes = [...track.notes].sort((a,b) => a.time - b.time);
     notes.forEach((n, i) => {
         let x = n.time * CONFIG.TIME_SCALE;
@@ -181,7 +181,7 @@ function buildSteps(track) {
             let gap = nextX - (x + w);
             if (gap > 0) w += gap; 
         }
-        currentY += CONFIG.STEP_Y_GAP;
+        currentY += CONFIG.STEP_Y_GAP; // 極小斜率
         steps.push({ x, y: currentY, w: Math.max(w, 40), freq: 440*Math.pow(2,(n.midi-69)/12), color: `hsla(${(n.midi*15)%360}, 75%, 60%, 0.8)`, active: 0, flash: 0 });
     });
     tracks = [{ steps, ball: { x: steps[0].x, y: steps[0].y - 30, vx: CONFIG.BALL_VX, vy: 0 }, cur: 0 }];
@@ -200,7 +200,7 @@ function startRecording() {
     recorder.onstop = () => {
         const blob = new Blob(chunks, { type: 'video/webm' });
         const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-        a.download = `chill_show_${Date.now()}.webm`; a.click();
+        a.download = `flat_show_${Date.now()}.webm`; a.click();
         setTimeout(() => location.reload(), 1000);
     };
     recorder.start(100);
@@ -222,7 +222,7 @@ function update() {
             osc.type = 'triangle'; 
             osc.frequency.setValueAtTime(s.freq, audioCtx.currentTime);
             g.gain.setTargetAtTime(0.3, audioCtx.currentTime, 0.01);
-            g.gain.setTargetAtTime(0, audioCtx.currentTime + 0.15, 0.2); // 延長尾音
+            g.gain.setTargetAtTime(0, audioCtx.currentTime + 0.15, 0.2);
             osc.connect(g); g.connect(audioCtx.destination); g.connect(audioDest);
             osc.start(); osc.stop(audioCtx.currentTime + 0.8);
             s.active = 1; s.flash = 1.0;
