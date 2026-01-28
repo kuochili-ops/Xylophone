@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>木琴工坊 App - 無縫廊道</title>
+    <title>木琴工坊 App - 三球齊步版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --success: #10b981; }
@@ -14,7 +14,7 @@
         .panel-content { background: rgba(15, 23, 42, 0.95); padding: 15px; border-radius: 20px; border: 1px solid #475569; display: flex; gap: 10px; backdrop-filter: blur(15px); }
         #uiPanel.collapsed .panel-content { opacity: 0; transform: translateY(20px) scale(0.9); pointer-events: none; }
         .toggle-btn { width: 55px; height: 55px; border-radius: 50%; background: #1e293b; border: 2px solid #475569; color: white; font-size: 24px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-        .action-btn { padding: 12px 24px; border-radius: 12px; border: none; font-weight: bold; color: white; cursor: pointer; font-size: 15px; }
+        .action-btn { padding: 12px 24px; border-radius: 12px; border: none; font-weight: bold; color: white; cursor: pointer; }
         #startBtn { background: var(--success); }
         #photoPreview { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 12px 0; }
         .photo-thumb { aspect-ratio: 1; background: #1e293b; border-radius: 6px; overflow: hidden; }
@@ -26,13 +26,13 @@
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="text-align:center; margin-top:0; color:var(--accent);">🎹 木琴工坊 - 無縫模式</h2>
+        <h2 style="text-align:center; margin-top:0; color:var(--accent);">🎹 木琴工坊 - 齊步對齊</h2>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleMidi(this)">
-        <div id="trackInfo" style="font-size:12px; color:#94a3b8; margin:10px 0;">MIDI 將自動橋接空隙...</div>
+        <div id="trackInfo" style="font-size:12px; color:#94a3b8; margin:10px 0;">解析時間差並同步起點...</div>
         <input type="file" id="galleryFiles" multiple accept="image/*" onchange="previewImages(this)">
         <div id="photoPreview"></div>
-        <input type="text" id="msgInit" value="Endless Rolling.">
-        <button id="entryBtn" class="primary-btn" onclick="enterScene()" disabled>進入場景</button>
+        <input type="text" id="msgInit" value="Synchronized Harmony.">
+        <button id="entryBtn" class="primary-btn" onclick="enterScene()" disabled>進入錄製場景</button>
     </div>
 </div>
 
@@ -53,10 +53,7 @@ let audioCtx, tracks = [], isRunning = false, isBallMoving = false, gallery = []
 let camX = 0, camY = 0, midiData = null, currentMsg = "";
 const cornerImg = new Image(); cornerImg.src = 'IMG_6604.png';
 
-const GRAVITY = 3200;
-const BALL_VX = 400;
-const BOUNCE_UP = -22; 
-const BALL_R = 12;
+const GRAVITY = 3200, BALL_VX = 400, BOUNCE_UP = -22, BALL_R = 12;
 const TRACK_COLORS = ["#ff4757", "#54a0ff", "#2ed573"];
 
 canvas.width = window.innerWidth; canvas.height = window.innerHeight;
@@ -65,7 +62,7 @@ function handleMidi(input) {
     if(input.files[0]) {
         input.files[0].arrayBuffer().then(buf => {
             midiData = new Midi(buf);
-            document.getElementById('trackInfo').innerText = "MIDI 橋接邏輯已準備。";
+            document.getElementById('trackInfo').innerText = "已計算時間差，起點已校準。";
             document.getElementById('entryBtn').disabled = false;
         });
     }
@@ -85,31 +82,44 @@ async function enterScene() {
     currentMsg = document.getElementById('msgInit').value;
     
     const sorted = [...midiData.tracks].sort((a,b) => b.notes.length - a.notes.length).slice(0, 3);
+    
+    // 找出所有軌道中最早的音符時間
+    let globalStartTime = Math.min(...sorted.map(t => t.notes[0]?.time || 0));
+
     sorted.forEach((track, idx) => {
         const steps = [];
         const baseOffset = idx * 220;
         const rawNotes = track.notes.sort((a,b) => a.time - b.time);
         
+        // 核心邏輯：如果該軌第一個音比較晚，補齊起點到第一個音的路徑
+        let firstNoteX = rawNotes[0].time * BALL_VX;
+        let startX = globalStartTime * BALL_VX;
+        
+        if (startX < firstNoteX) {
+            steps.push({ 
+                x: startX, 
+                y: (canvas.height * 0.3 + baseOffset), 
+                w: firstNoteX - startX + 10, 
+                isNote: false, active: 0 
+            });
+        }
+
         rawNotes.forEach((n, i) => {
             let x = n.time * BALL_VX;
             let y = (canvas.height * 0.3 + baseOffset) + (i * 18);
             let w = Math.max(n.duration * BALL_VX, 45);
             
-            // --- 橋接邏輯：補足相鄰音板間的空隙 ---
-            if (i > 0) {
+            if (steps.length > 0) {
                 let prev = steps[steps.length - 1];
                 let gap = x - (prev.x + prev.w);
-                if (gap > 2) {
-                    // 如果有大空隙，延長上一個音板來補位
-                    prev.w += gap + 2; 
-                }
+                if (gap > 1) prev.w += gap + 2; 
             }
             steps.push({ x, y, w, freq: 440*Math.pow(2,(n.midi-69)/12), isNote: true, active: 0 });
         });
         
         tracks.push({ 
             steps, 
-            ball: { x: steps[0].x + 5, y: steps[0].y - BALL_R, vx: BALL_VX, vy: 0, color: TRACK_COLORS[idx] }, 
+            ball: { x: startX + 5, y: steps[0].y - BALL_R, vx: BALL_VX, vy: 0, color: TRACK_COLORS[idx] }, 
             cur: 0 
         });
     });
@@ -119,13 +129,13 @@ async function enterScene() {
         const img = new Image(); img.src = URL.createObjectURL(gFiles[i]);
         await new Promise(r => img.onload = r);
         const t = tracks[i % tracks.length];
-        const s = t.steps[Math.floor(Math.random() * t.steps.length)];
+        const s = t.steps[Math.floor(Math.random() * (t.steps.length-1)) + 1];
         gallery.push({ img, x: s.x + 80, y: s.y - 180, w: 150, h: 150 * (img.height/img.width), rot: (Math.random()-0.5)*0.1 });
     }
 
     document.getElementById('setupPanel').style.display = 'none';
     document.getElementById('uiPanel').style.display = 'flex';
-    camX = tracks[0].ball.x - 200; camY = tracks[0].ball.y - 300;
+    camX = tracks[0].ball.x - 150; camY = tracks[0].ball.y - 300;
     initStars();
     isRunning = true; requestAnimationFrame(loop);
 }
@@ -138,7 +148,10 @@ function initStars() {
 function startApp() {
     if (audioCtx.state === 'suspended') audioCtx.resume();
     isBallMoving = true;
-    tracks.forEach(t => { t.ball.vy = -2; hitStep(t.steps[0]); });
+    tracks.forEach(t => { 
+        t.ball.vy = -5; 
+        if(t.steps[0].isNote) hitStep(t.steps[0]); 
+    });
     document.getElementById('uiPanel').classList.add('collapsed');
 }
 
@@ -151,9 +164,8 @@ function loop() {
             let prevY = b.y;
             b.vy += GRAVITY * dt; b.x += b.vx * dt; b.y += b.vy * dt;
             
-            // 安全機制：如果球掉得太深，強制拉回最近的路徑高度
             let currentPathY = t.steps[t.cur].y;
-            if (b.y > currentPathY + 100) { b.y = currentPathY - BALL_R; b.vy = 0; }
+            if (b.y > currentPathY + 120) { b.y = currentPathY - BALL_R; b.vy = 0; }
 
             for (let i = t.cur; i < Math.min(t.cur + 8, t.steps.length); i++) {
                 let s = t.steps[i];
@@ -179,7 +191,7 @@ function hitStep(s) {
     if (s.active) return;
     const osc = audioCtx.createOscillator(); const g = audioCtx.createGain();
     osc.type = 'triangle'; osc.frequency.setValueAtTime(s.freq, audioCtx.currentTime);
-    g.gain.setValueAtTime(0.1, audioCtx.currentTime);
+    g.gain.setValueAtTime(0.12, audioCtx.currentTime);
     g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
     osc.connect(g); g.connect(audioCtx.destination);
     osc.start(); osc.stop(audioCtx.currentTime + 0.3);
@@ -206,7 +218,7 @@ function draw() {
             ctx.save();
             ctx.translate(p.x + p.w/2, p.y + p.h/2);
             ctx.rotate(p.rot);
-            ctx.fillStyle = "#fff"; ctx.fillRect(-p.w/2-4, -p.h/2-4, p.w+8, p.h+8);
+            ctx.fillStyle = "#fff"; ctx.fillRect(-p.w/2-5, -p.h/2-5, p.w+10, p.h+10);
             ctx.drawImage(p.img, -p.w/2, -p.h/2, p.w, p.h);
             ctx.restore();
         }
@@ -215,7 +227,7 @@ function draw() {
     tracks.forEach(t => {
         t.steps.forEach(s => {
             if(Math.abs(s.x - camX) < 1400) {
-                ctx.fillStyle = s.active ? "#fff" : "rgba(255,255,255,0.12)";
+                ctx.fillStyle = s.active ? "#fff" : (s.isNote ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.03)");
                 ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, 18, 9); ctx.fill();
             }
         });
