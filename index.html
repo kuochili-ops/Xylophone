@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>木琴工坊 - MIDI Ready</title>
+    <title>木琴工坊 - Final Position</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; }
@@ -11,22 +11,19 @@
         #setupPanel { position: fixed; inset: 0; background: #020617; z-index: 5000; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; align-items: center; }
         .config-card { background: rgba(15, 23, 42, 0.98); padding: 25px; border-radius: 24px; border: 1px solid #334155; width: 100%; max-width: 420px; }
         .track-list { max-height: 120px; overflow-y: auto; background: #070b14; border-radius: 12px; border: 1px solid #1e293b; margin: 10px 0; }
-        .track-item { padding: 12px; border-bottom: 1px solid #1e293b; font-size: 13px; cursor: pointer; transition: 0.2s; }
-        .track-item:hover { background: rgba(59, 130, 246, 0.2); }
+        .track-item { padding: 12px; border-bottom: 1px solid #1e293b; font-size: 13px; cursor: pointer; }
         .track-item.active { background: var(--accent); color: white; }
         #photoPreview { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; margin-top: 10px; }
         .photo-thumb { aspect-ratio: 1; background: #1e293b; border-radius: 6px; overflow: hidden; }
         .photo-thumb img { width: 100%; height: 100%; object-fit: cover; }
         .record-ui { position: fixed; bottom: 40px; left: 0; right: 0; z-index: 1000; display: none; justify-content: center; gap: 30px; }
-        .btn-main { width: 75px; height: 75px; border-radius: 50%; border: none; font-weight: bold; color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        .btn-main { width: 75px; height: 75px; border-radius: 50%; border: none; font-weight: bold; color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; }
         #playBtn { background: #10b981; }
         #recBtn { background: #ef4444; border: 4px solid #fff; }
-        #recBtn.is-recording { border-radius: 12px; background: #991b1b; animation: pulse 1.5s infinite; }
-        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
+        #recBtn.is-recording { border-radius: 12px; background: #991b1b; }
         input { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #334155; background: #0f172a; color: #fff; margin-bottom: 10px; box-sizing: border-box; }
-        .primary-btn { width: 100%; padding: 18px; border-radius: 15px; background: var(--accent); color: white; border: none; font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.3s; }
-        .primary-btn:disabled { background: #334155; cursor: not-allowed; }
-        label { display: block; font-size: 12px; color: #94a3b8; margin-bottom: 5px; margin-left: 5px; }
+        .primary-btn { width: 100%; padding: 18px; border-radius: 15px; background: var(--accent); color: white; border: none; font-size: 16px; font-weight: bold; cursor: pointer; }
+        label { display: block; font-size: 12px; color: #94a3b8; margin: 10px 0 5px 5px; }
     </style>
 </head>
 <body>
@@ -34,18 +31,14 @@
 <div id="setupPanel">
     <div class="config-card">
         <h2 style="text-align:center; margin-top:0;">🎹 木琴工坊 Pro</h2>
-        
-        <label>1. 選擇 MIDI 音軌 (已自動載入預設)</label>
+        <label>1. MIDI 音軌 (預設已載入)</label>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleManualMidi(this)">
-        <div id="trackContainer" class="track-list">正在載入預設 MIDI...</div>
-        
-        <label>2. 上傳廊道照片</label>
+        <div id="trackContainer" class="track-list">載入中...</div>
+        <label>2. 廊道相片 (建議多張)</label>
         <input type="file" id="galleryFiles" multiple accept="image/*" onchange="previewImages(this)">
         <div id="photoPreview"></div>
-        
-        <label>3. 結尾留言</label>
-        <input type="text" id="msgInit" value="Fantastic Harmony!">
-        
+        <label>3. 結尾訊息</label>
+        <input type="text" id="msgInit" value="Thanks for Watching!">
         <button id="entryBtn" class="primary-btn" onclick="enterScene()" disabled>進入舞台</button>
     </div>
 </div>
@@ -64,7 +57,7 @@ let audioCtx, tracks = [], isRunning = false, isBallMoving = false, gallery = []
 let camX = 0, camY = 0, recorder, chunks = [], audioDest, selectedTrackIdx = -1;
 let isFinishing = false, isRecording = false, currentMsg = "";
 let lastTime = 0, isInitialSlide = true;
-let zoomScale = 0.82;
+let zoomScale = 0.85; // 稍微拉近一點，讓下移後的照片更清晰
 
 const cornerImg = new Image(); cornerImg.src = 'IMG_6604.png';
 const GRAVITY = 3500, BALL_VX = 360, BOUNCE_UP = -30, BALL_R = 12;
@@ -72,19 +65,11 @@ const NOTE_COLORS = ["#FF5252", "#FF4081", "#E040FB", "#7C4DFF", "#536DFE", "#44
 
 canvas.width = window.innerWidth; canvas.height = window.innerHeight;
 
-// --- 預設 MIDI 載入邏輯 ---
 window.addEventListener('load', async () => {
     try {
-        const response = await fetch('Mario Bros. - Super Mario Bros. Theme.mid');
-        if (response.ok) {
-            const buf = await response.arrayBuffer();
-            processMidiBuffer(buf);
-        } else {
-            document.getElementById('trackContainer').innerText = "未找到預設 MIDI，請手動上傳";
-        }
-    } catch (e) {
-        document.getElementById('trackContainer').innerText = "載入失敗，請手動上傳 MIDI";
-    }
+        const res = await fetch('Mario Bros. - Super Mario Bros. Theme.mid');
+        if (res.ok) processMidiBuffer(await res.arrayBuffer());
+    } catch (e) { document.getElementById('trackContainer').innerText = "請手動上傳 MIDI"; }
 });
 
 function handleManualMidi(input) {
@@ -96,12 +81,11 @@ function processMidiBuffer(buf) {
     const fullMidi = new Midi(buf);
     const container = document.getElementById('trackContainer');
     container.innerHTML = "";
-    
     fullMidi.tracks.forEach((t, i) => {
         if(t.notes.length === 0) return;
         const item = document.createElement('div');
         item.className = "track-item";
-        item.innerHTML = `Track ${i+1} (${t.notes.length} 音符) - ${t.name || '未命名'}`;
+        item.innerHTML = `Track ${i+1} (${t.notes.length} 音符)`;
         item.onclick = () => {
             selectedTrackIdx = i;
             window.selectedTrackData = t;
@@ -115,32 +99,27 @@ function processMidiBuffer(buf) {
 }
 
 function previewImages(input) {
-    const container = document.getElementById('photoPreview');
-    container.innerHTML = "";
+    const container = document.getElementById('photoPreview'); container.innerHTML = "";
     Array.from(input.files).slice(0, 10).forEach(file => {
-        const img = document.createElement('img');
-        img.src = URL.createObjectURL(file);
-        const div = document.createElement('div');
-        div.className = 'photo-thumb';
-        div.appendChild(img);
-        container.appendChild(div);
+        const img = document.createElement('img'); img.src = URL.createObjectURL(file);
+        const div = document.createElement('div'); div.className = 'photo-thumb';
+        div.appendChild(img); container.appendChild(div);
     });
 }
 
 async function enterScene() {
     currentMsg = document.getElementById('msgInit').value;
     buildSteps(window.selectedTrackData);
-    
     const gFiles = document.getElementById('galleryFiles').files;
     for (let i = 0; i < gFiles.length; i++) {
         const img = new Image(); img.src = URL.createObjectURL(gFiles[i]);
         await new Promise(r => img.onload = r);
-        const dispW = 300;
+        const dispW = 280;
         const dispH = dispW * (img.height / img.width);
+        // 照片再次下移，距離音階僅 30px
         const s = tracks[0].steps[Math.floor((i/gFiles.length)*tracks[0].steps.length)];
-        gallery.push({ img, x: s.x + 80, y: s.y - dispH - 60, w: dispW, h: dispH });
+        gallery.push({ img, x: s.x + 80, y: s.y - dispH - 30, w: dispW, h: dispH });
     }
-
     document.getElementById('setupPanel').style.display = 'none';
     document.getElementById('recordUI').style.display = 'flex';
     audioDest = audioCtx.createMediaStreamDestination();
@@ -189,12 +168,11 @@ function triggerEndSequence() {
     isFinishing = true;
     isBallMoving = false;
     document.getElementById('recordUI').style.display = 'none';
-    
     let timer = 0;
     const holdVideo = () => {
         draw(); 
         timer++;
-        if (timer < 160) { // 延長至約 5.5 秒確保結尾完整
+        if (timer < 180) { // 再次微調延長至 6 秒確保 100% 錄製成功
             requestAnimationFrame(holdVideo);
         } else {
             if(recorder && recorder.state !== 'inactive') {
@@ -211,7 +189,7 @@ function saveVideo() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `music_work_${Date.now()}.mp4`;
+    a.download = `music_final_${Date.now()}.mp4`;
     a.click();
     setTimeout(() => location.reload(), 2000);
 }
@@ -273,8 +251,8 @@ function draw() {
     
     gallery.forEach(p => {
         if(p.x > camX - 1200 && p.x < camX + canvas.width + 1200) {
-            ctx.fillStyle = "rgba(255,255,255,0.12)";
-            ctx.fillRect(p.x - 5, p.y - 5, p.w + 10, p.h + 10);
+            ctx.fillStyle = "rgba(255,255,255,0.15)";
+            ctx.fillRect(p.x - 4, p.y - 4, p.w + 8, p.h + 8);
             ctx.drawImage(p.img, p.x, p.y, p.w, p.h);
         }
     });
@@ -294,14 +272,14 @@ function draw() {
     ctx.restore();
 
     if (isFinishing) {
-        ctx.fillStyle = "rgba(0,0,0,0.95)"; 
+        ctx.fillStyle = "rgba(0,0,0,0.96)"; 
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.fillStyle = "#fff"; 
-        ctx.font = "bold 38px sans-serif"; 
+        ctx.font = "bold 40px sans-serif"; 
         ctx.textAlign = "center";
         ctx.fillText(currentMsg, canvas.width/2, canvas.height/2);
         if (cornerImg.complete) {
-            const size = 130;
+            const size = 140;
             ctx.drawImage(cornerImg, canvas.width - size - 40, canvas.height - size - 80, size, size);
         }
     }
