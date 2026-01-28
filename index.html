@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>木琴工坊 - 密集階梯回復版</title>
+    <title>木琴工坊 - 系統錄影版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --success: #10b981; }
@@ -16,32 +16,35 @@
         #photoPreview { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; margin: 10px 0; }
         .photo-thumb { aspect-ratio: 1; background: #1e293b; border-radius: 4px; overflow: hidden; }
         .photo-thumb img { width: 100%; height: 100%; object-fit: cover; }
-        .record-ui { position: fixed; bottom: 30px; left: 0; right: 0; z-index: 1000; display: none; justify-content: center; gap: 20px; }
-        .btn-main { width: 65px; height: 65px; border-radius: 50%; border: none; font-weight: bold; color: white; cursor: pointer; }
-        #playBtn { background: var(--success); }
-        #recBtn { background: #ef4444; border: 3px solid #fff; }
-        #recBtn.is-saving { background: #475569; opacity: 0.7; cursor: wait; border: none; }
-        input[type="file"], input[type="text"] { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: #fff; margin-bottom: 8px; box-sizing: border-box; font-size: 14px; }
+        .ui-overlay { position: fixed; bottom: 30px; left: 0; right: 0; z-index: 1000; display: none; justify-content: center; }
+        .btn-play { width: 70px; height: 70px; border-radius: 50%; border: none; font-weight: bold; color: white; cursor: pointer; background: var(--success); font-size: 16px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        input[type="file"], input[type="text"] { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: #fff; margin-bottom: 8px; box-sizing: border-box; }
         .primary-btn { width: 100%; padding: 15px; border-radius: 12px; background: var(--accent); color: white; border: none; font-weight: bold; cursor: pointer; }
+        #endingScreen { position: fixed; inset: 0; background: #000; z-index: 2000; display: none; flex-direction: column; align-items: center; justify-content: center; }
+        #endingMsg { font-size: 32px; font-weight: bold; text-align: center; margin-bottom: 20px; }
     </style>
 </head>
 <body>
 
 <div id="setupPanel">
     <div class="config-card">
-        <h3 style="text-align:center; margin-top:0;">🎹 密集階梯模式</h3>
+        <h3 style="text-align:center; margin-top:0;">🎹 錄影建議：使用 iPhone 系統錄影</h3>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleManualMidi(this)">
         <div id="trackContainer" class="track-list">讀取 MIDI...</div>
         <input type="file" id="galleryFiles" multiple accept="image/*" onchange="previewImages(this)">
         <div id="photoPreview"></div>
-        <input type="text" id="msgInit" value="Thanks for Watching!">
+        <input type="text" id="msgInit" value="Beautiful Memories.">
         <button id="entryBtn" class="primary-btn" onclick="enterScene()" disabled>進入場景</button>
     </div>
 </div>
 
-<div class="record-ui" id="recordUI">
-    <button id="playBtn" class="btn-main" onclick="togglePlay()">播放</button>
-    <button id="recBtn" class="btn-main" onclick="handleRecording()">錄製</button>
+<div class="ui-overlay" id="recordUI">
+    <button id="playBtn" class="btn-play" onclick="togglePlay()">播放</button>
+</div>
+
+<div id="endingScreen">
+    <div id="endingMsg"></div>
+    <div id="endingImgContainer"></div>
 </div>
 
 <canvas id="stage"></canvas>
@@ -50,8 +53,8 @@
 const canvas = document.getElementById('stage');
 const ctx = canvas.getContext('2d', { alpha: false });
 let audioCtx, tracks = [], isRunning = false, isBallMoving = false, gallery = [], stars = [];
-let camX = 0, camY = 0, recorder, chunks = [], audioDest, selectedTrackData = null;
-let isFinishing = false, isRecording = false, isSaving = false, currentMsg = "";
+let camX = 0, camY = 0, selectedTrackData = null;
+let isFinishing = false, currentMsg = "";
 let isInitialSlide = true;
 
 const cornerImg = new Image(); cornerImg.src = 'IMG_6604.png';
@@ -131,25 +134,19 @@ async function enterScene() {
     }
     document.getElementById('setupPanel').style.display = 'none';
     document.getElementById('recordUI').style.display = 'flex';
-    audioDest = audioCtx.createMediaStreamDestination();
     isRunning = true; requestAnimationFrame(loop);
 }
 
 function buildSteps(track) {
     let rawNotes = track.notes.sort((a,b) => a.time - b.time);
     let steps = [], startY = canvas.height * 0.4;
-    
     rawNotes.forEach((n, i) => {
         let x = n.time * BALL_VX;
         let y = startY + (i * 18); 
         let w = Math.max(n.duration * BALL_VX, 45);
-        
         if (i > 0) {
             let prev = steps[i-1];
-            let endOfPrev = prev.x + prev.w;
-            if (x > endOfPrev + 8) {
-                prev.w = x - prev.x - 5; 
-            }
+            if (x > prev.x + prev.w + 8) prev.w = x - prev.x - 5; 
         }
         steps.push({ x, y, w, freq: 440*Math.pow(2,(n.midi-69)/12), color: NOTE_COLORS[n.midi % 12], active: 0 });
     });
@@ -172,7 +169,7 @@ function loop() {
                         b.y = s.y - BALL_R; b.vy = BOUNCE_UP; t.cur = i; hitStep(s); break;
                     }
                 }
-                if (b.x > t.steps[t.steps.length - 1].x + 500) triggerEndSequence();
+                if (b.x > t.steps[t.steps.length - 1].x + 800) { isFinishing = true; isBallMoving = false; }
             }
             camX += (b.x - canvas.width * 0.20 - camX) * 0.1;
             camY += (b.y - canvas.height * 0.55 - camY) * 0.1;
@@ -188,15 +185,13 @@ function hitStep(s) {
     osc.type = 'triangle'; osc.frequency.setValueAtTime(s.freq, audioCtx.currentTime);
     g.gain.setValueAtTime(0.15, audioCtx.currentTime);
     g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
-    osc.connect(g); g.connect(audioCtx.destination); g.connect(audioDest);
+    osc.connect(g); g.connect(audioCtx.destination);
     osc.start(); osc.stop(audioCtx.currentTime + 0.3);
     s.active = 1;
 }
 
 function draw() {
     ctx.fillStyle = "#020617"; ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
-    // 背景星星保持
     stars.forEach(s => {
         let x = (s.x - camX * s.parallax) % canvas.width; if (x < 0) x += canvas.width;
         let y = (s.y - camY * s.parallax) % canvas.height; if (y < 0) y += canvas.height;
@@ -234,50 +229,13 @@ function draw() {
         ctx.fillStyle = "#fff"; ctx.font = "bold 32px sans-serif"; ctx.textAlign = "center";
         ctx.fillText(currentMsg, canvas.width/2, canvas.height/2);
         if (cornerImg.complete) ctx.drawImage(cornerImg, canvas.width - 150, canvas.height - 180, 110, 110);
+        document.getElementById('recordUI').style.display = 'none'; // 結尾自動隱藏按鈕
     }
 }
 
-function togglePlay() { isBallMoving = !isBallMoving; document.getElementById('playBtn').innerText = isBallMoving ? "暫停" : "播放"; }
-
-function handleRecording() {
-    if (isSaving) return;
-    if (!isRecording) {
-        chunks = [];
-        const stream = canvas.captureStream(24);
-        const combined = new MediaStream([...stream.getTracks(), ...audioDest.stream.getTracks()]);
-        recorder = new MediaRecorder(combined, { mimeType: 'video/webm;codecs=vp8', videoBitsPerSecond: 2500000 });
-        recorder.ondataavailable = e => { if(e.data.size > 0) chunks.push(e.data); };
-        recorder.onstop = saveVideo;
-        recorder.start(1000); 
-        isRecording = true;
-        document.getElementById('recBtn').innerText = "STOP";
-    } else {
-        triggerEndSequence();
-    }
-}
-
-function triggerEndSequence() {
-    if (isFinishing || isSaving) return;
-    isFinishing = true; isBallMoving = false; isSaving = true;
-    const btn = document.getElementById('recBtn');
-    btn.innerText = "SAVING..."; btn.classList.add('is-saving');
-
-    let count = 0;
-    const flusher = setInterval(() => {
-        if (recorder && recorder.state === 'recording') recorder.requestData();
-        count++;
-        if (count >= 6) { 
-            clearInterval(flusher);
-            if (recorder && recorder.state !== 'inactive') recorder.stop();
-        }
-    }, 500);
-}
-
-function saveVideo() {
-    const blob = new Blob(chunks, { type: 'video/webm' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = `mario_staircase_v2_${Date.now()}.webm`; a.click();
-    setTimeout(() => location.reload(), 2000);
+function togglePlay() { 
+    isBallMoving = !isBallMoving; 
+    document.getElementById('playBtn').innerText = isBallMoving ? "暫停" : "播放"; 
 }
 </script>
 </body>
