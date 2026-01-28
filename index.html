@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴工坊 - 預設旋律慢速版</title>
+    <title>AI 木琴工坊 - 靜謐慢速版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --panel: rgba(15, 23, 42, 0.98); }
@@ -11,7 +11,7 @@
         .config-card { background: var(--panel); padding: 30px; border-radius: 20px; border: 2px solid #334155; width: 450px; text-align: center; }
         .section-title { font-size: 13px; color: var(--accent); margin: 15px 0 5px 0; font-weight: bold; text-align: left; }
         .track-list { margin: 10px 0; max-height: 200px; overflow-y: auto; background: #070b14; border-radius: 10px; padding: 10px; border: 1px solid #1e293b; text-align: left; }
-        .track-item { padding: 12px; margin-bottom: 8px; background: #1e293b; border-radius: 8px; cursor: pointer; font-size: 13px; transition: 0.2s; border: 1px solid transparent; display: flex; justify-content: space-between; align-items: center; }
+        .track-item { padding: 12px; margin-bottom: 8px; background: #1e293b; border-radius: 8px; cursor: pointer; font-size: 13px; transition: 0.2s; border: 1px solid transparent; }
         .track-item:hover { background: #2d3a4f; }
         .track-item.active { background: var(--accent); border-color: #fff; box-shadow: 0 0 10px rgba(59, 130, 246, 0.5); }
         .record-ui { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; display: none; gap: 12px; background: var(--panel); padding: 12px 28px; border-radius: 50px; border: 1px solid #3b82f6; }
@@ -26,14 +26,14 @@
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="margin:0;">🎵 預設旋律慢速版</h2>
+        <h2 style="margin:0;">🌌 靜謐慢速版 (X 0.7)</h2>
         <div class="section-title">1. MIDI 軌道 (預設已載入)</div>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleMidiUpload(this)">
         <div id="trackContainer" class="track-list">正在加載預設旋律...</div>
         <div class="section-title">2. 照片廊道 (多選)</div>
         <input type="file" id="galleryFiles" multiple accept="image/*">
         <div class="section-title">3. 結束留言</div>
-        <input type="text" id="msgInit" value="Classic Melody. 終">
+        <input type="text" id="msgInit" value="A Peaceful Journey. 終">
         <button id="entryBtn" class="btn" onclick="enterScene()" disabled>確認並進入</button>
     </div>
 </div>
@@ -46,11 +46,12 @@
 <canvas id="stage"></canvas>
 
 <script>
-const TIME_SCALE = 140;
+// 再次乘以 0.7 後的參數
+const TIME_SCALE = 98; 
 const CONFIG = { 
-    GRAVITY: 0.5,
+    GRAVITY: 0.35,          // 更低重力配合慢速
     BALL_VX: TIME_SCALE / 60, 
-    BOUNCE_UP: -0.4, 
+    BOUNCE_UP: -0.35, 
     STEP_Y_GAP: 15, 
     TIME_SCALE: TIME_SCALE,     
     BALL_R: 10 
@@ -61,13 +62,11 @@ const ctx = canvas.getContext('2d', { alpha: false });
 let audioCtx, tracks = [], isRunning = false, isBallMoving = false, fullMidi, gallery = [];
 let camX = 0, camY = 0, recorder, chunks = [], audioDest, selectedTrackIdx = -1;
 let isFinishing = false, finishAlpha = 0, isRecording = false, currentMsg = "";
-let saveCounter = 0;
-let activePreviewOscillators = [];
+let saveCounter = 0, activePreviewOscillators = [];
 const cornerImg = new Image(); cornerImg.src = 'IMG_6604.png';
 
 canvas.width = window.innerWidth; canvas.height = window.innerHeight;
 
-// 預設 MIDI 備援數據 (瑪利歐片段)
 const DEFAULT_MIDI_DATA = [
     { time: 0, midi: 76, duration: 0.1 }, { time: 0.2, midi: 76, duration: 0.1 },
     { time: 0.4, midi: 76, duration: 0.1 }, { time: 0.6, midi: 72, duration: 0.1 },
@@ -86,24 +85,17 @@ async function ensureAudioStarted() {
 window.addEventListener('load', async () => {
     try {
         const res = await fetch('./Mario Bros. - Super Mario Bros. Theme.mid');
-        if (res.ok) {
-            parseMidi(await res.arrayBuffer());
-        } else {
-            loadDefaultMelody();
-        }
-    } catch (e) {
-        loadDefaultMelody();
-    }
+        if (res.ok) parseMidi(await res.arrayBuffer()); else loadDefaultMelody();
+    } catch (e) { loadDefaultMelody(); }
 });
 
 function loadDefaultMelody() {
     const container = document.getElementById('trackContainer');
     container.innerHTML = `<div class="track-item active" id="defaultTrack"><span>預設旋律 (Mario Theme)</span></div>`;
-    selectedTrackIdx = 999; // 標記為預設
+    selectedTrackIdx = 999;
     document.getElementById('entryBtn').disabled = false;
     document.getElementById('defaultTrack').onclick = () => {
-        ensureAudioStarted();
-        stopAllPreviews();
+        ensureAudioStarted(); stopAllPreviews();
         previewTrack({ notes: DEFAULT_MIDI_DATA });
     };
 }
@@ -118,8 +110,7 @@ function parseMidi(buf) {
         item.className = "track-item";
         item.innerHTML = `<span>軌道 ${i+1} (${t.notes.length})</span>`;
         item.onclick = async () => {
-            await ensureAudioStarted();
-            stopAllPreviews();
+            await ensureAudioStarted(); stopAllPreviews();
             selectedTrackIdx = i;
             document.querySelectorAll('.track-item').forEach(e => e.classList.remove('active'));
             item.classList.add('active');
@@ -131,27 +122,21 @@ function parseMidi(buf) {
 }
 
 function stopAllPreviews() {
-    activePreviewOscillators.forEach(obj => {
-        try { obj.osc.stop(); obj.osc.disconnect(); } catch(e){}
-    });
+    activePreviewOscillators.forEach(obj => { try { obj.osc.stop(); obj.osc.disconnect(); } catch(e){} });
     activePreviewOscillators = [];
 }
 
 function previewTrack(track) {
     const now = audioCtx.currentTime;
-    const previewNotes = track.notes.slice(0, 20);
-    previewNotes.forEach(n => {
+    track.notes.slice(0, 20).forEach(n => {
         const osc = audioCtx.createOscillator();
         const g = audioCtx.createGain();
-        osc.type = 'sine';
         osc.frequency.setValueAtTime(440 * Math.pow(2, (n.midi - 69) / 12), now + n.time);
         g.gain.setValueAtTime(0, now + n.time);
         g.gain.linearRampToValueAtTime(0.2, now + n.time + 0.02);
         g.gain.exponentialRampToValueAtTime(0.001, now + n.time + 0.3);
-        osc.connect(g);
-        g.connect(audioCtx.destination);
-        osc.start(now + n.time);
-        osc.stop(now + n.time + 0.4);
+        osc.connect(g); g.connect(audioCtx.destination);
+        osc.start(now + n.time); osc.stop(now + n.time + 0.4);
         activePreviewOscillators.push({ osc, g });
     });
 }
@@ -164,19 +149,14 @@ function drawFramedImage(item) {
     const h = w * (img.height / img.width);
     const border = 14;
     ctx.fillStyle = "#451a03"; ctx.fillRect(x - border, y - border, w + border * 2, h + border * 2);
-    ctx.strokeStyle = "#c2410c"; ctx.lineWidth = 2;
-    ctx.strokeRect(x - border + 2, y - border + 2, w + border * 2 - 4, h + border * 2 - 4);
     ctx.drawImage(img, x, y, w, h);
 }
 
 async function enterScene() {
-    stopAllPreviews();
-    await ensureAudioStarted();
+    stopAllPreviews(); await ensureAudioStarted();
     currentMsg = document.getElementById('msgInit').value;
-    
     const targetTrack = (selectedTrackIdx === 999) ? { notes: DEFAULT_MIDI_DATA } : fullMidi.tracks[selectedTrackIdx];
     buildSteps(targetTrack);
-    
     const steps = tracks[0].steps;
     const gFiles = document.getElementById('galleryFiles').files;
     for (let i = 0; i < gFiles.length; i++) {
@@ -220,7 +200,7 @@ function startRecording() {
     recorder.onstop = () => {
         const blob = new Blob(chunks, { type: 'video/webm' });
         const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-        a.download = `sync_show_${Date.now()}.webm`; a.click();
+        a.download = `chill_show_${Date.now()}.webm`; a.click();
         setTimeout(() => location.reload(), 1000);
     };
     recorder.start(100);
@@ -242,9 +222,9 @@ function update() {
             osc.type = 'triangle'; 
             osc.frequency.setValueAtTime(s.freq, audioCtx.currentTime);
             g.gain.setTargetAtTime(0.3, audioCtx.currentTime, 0.01);
-            g.gain.setTargetAtTime(0, audioCtx.currentTime + 0.15, 0.15);
+            g.gain.setTargetAtTime(0, audioCtx.currentTime + 0.15, 0.2); // 延長尾音
             osc.connect(g); g.connect(audioCtx.destination); g.connect(audioDest);
-            osc.start(); osc.stop(audioCtx.currentTime + 0.6);
+            osc.start(); osc.stop(audioCtx.currentTime + 0.8);
             s.active = 1; s.flash = 1.0;
         }
     }
