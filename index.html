@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴工坊 - 極致慢節奏版</title>
+    <title>AI 木琴工坊 - 寬板慢速版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --panel: rgba(15, 23, 42, 0.98); }
@@ -26,14 +26,14 @@
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="margin:0;">🌌 極致慢節奏 (頭尾接)</h2>
+        <h2 style="margin:0;">🎹 寬板慢速 (X 2)</h2>
         <div class="section-title">1. MIDI 軌道 (預設已載入)</div>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleMidiUpload(this)">
         <div id="trackContainer" class="track-list">讀取中...</div>
         <div class="section-title">2. 照片廊道 (多選)</div>
         <input type="file" id="galleryFiles" multiple accept="image/*">
         <div class="section-title">3. 結束留言</div>
-        <input type="text" id="msgInit" value="Deep Slow Motion. 終">
+        <input type="text" id="msgInit" value="Wide & Slow. 終">
         <button id="entryBtn" class="btn" onclick="enterScene()" disabled>確認並進入</button>
     </div>
 </div>
@@ -46,16 +46,16 @@
 <canvas id="stage"></canvas>
 
 <script>
-// 極致慢速參數
-const TIME_SCALE = 60; 
+// 板長加倍，時間軸同步撐開
+const TIME_SCALE = 120; 
 const CONFIG = { 
-    GRAVITY: 0.15,           // 超低重力
-    BALL_VX: 1.0,            // 極低橫向初速
-    BOUNCE_UP: -0.25,        // 輕柔彈起
-    STEP_Y_GAP: 4,           // 極緩坡度階差
+    GRAVITY: 0.15,           // 維持超低重力
+    BALL_VX: 2.0,            // 配合 TIME_SCALE 調整速度 (2px/frame)
+    BOUNCE_UP: -0.28,        
+    STEP_Y_GAP: 6,           // 略微增加階差以配合長板視覺
     TIME_SCALE: TIME_SCALE,     
     BALL_R: 10,
-    FIXED_STEP_W: 80         
+    FIXED_STEP_W: 160        // 板長加倍 (原本 80 -> 160)
 };
 
 const canvas = document.getElementById('stage');
@@ -92,7 +92,7 @@ window.addEventListener('load', async () => {
 
 function loadDefaultMelody() {
     const container = document.getElementById('trackContainer');
-    container.innerHTML = `<div class="track-item active" id="defaultTrack"><span>慢節奏預設旋律</span></div>`;
+    container.innerHTML = `<div class="track-item active" id="defaultTrack"><span>寬板預設旋律</span></div>`;
     selectedTrackIdx = 999;
     document.getElementById('entryBtn').disabled = false;
     document.getElementById('defaultTrack').onclick = () => {
@@ -164,7 +164,7 @@ async function enterScene() {
         const img = new Image(); img.src = URL.createObjectURL(gFiles[i]);
         await new Promise(r => img.onload = r);
         const targetIdx = Math.floor((i / gFiles.length) * (steps.length - 1));
-        gallery.push({ img, x: steps[targetIdx].x + 40, y: steps[targetIdx].y - 280, w: 240 });
+        gallery.push({ img, x: steps[targetIdx].x + 100, y: steps[targetIdx].y - 350, w: 320 });
     }
     document.getElementById('setupPanel').style.display = 'none';
     document.getElementById('recordUI').style.display = 'flex';
@@ -179,16 +179,16 @@ function buildSteps(track) {
         let x = n.time * CONFIG.TIME_SCALE;
         let w = CONFIG.FIXED_STEP_W;
         
-        // 嚴格頭尾接：寬度 = 下一個 X - 這一個 X
+        // 無縫銜接：確保長度剛好蓋到下一塊
         if (i < notes.length - 1) {
             let nextX = notes[i+1].time * CONFIG.TIME_SCALE;
-            w = nextX - x;
+            w = Math.max(CONFIG.FIXED_STEP_W, nextX - x); 
         }
 
         steps.push({ 
             x, y: currentY, w, 
             freq: 440*Math.pow(2,(n.midi-69)/12), 
-            color: `hsla(${(n.midi*15)%360}, 75%, 60%, 0.8)`, 
+            color: `hsla(${(n.midi*15)%360}, 70%, 55%, 0.8)`, 
             active: 0, flash: 0 
         });
         currentY += CONFIG.STEP_Y_GAP;
@@ -209,7 +209,7 @@ function startRecording() {
     recorder.onstop = () => {
         const blob = new Blob(chunks, { type: 'video/webm' });
         const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-        a.download = `deep_slow_${Date.now()}.webm`; a.click();
+        a.download = `wide_slow_${Date.now()}.webm`; a.click();
         setTimeout(() => location.reload(), 1000);
     };
     recorder.start(100);
@@ -223,17 +223,16 @@ function update() {
     b.vy += CONFIG.GRAVITY; b.x += b.vx; b.y += b.vy;
     if (t.cur >= t.steps.length) { triggerFinish(); return; }
     
-    // 碰撞偵測：因為慢速且無縫，偵測盒只需微調
     t.steps.forEach((s, idx) => {
-        if (b.x >= s.x && b.x < s.x + s.w && b.y + CONFIG.BALL_R >= s.y && b.y < s.y + 10 && b.vy >= 0) {
+        if (b.x >= s.x && b.x < s.x + s.w && b.y + CONFIG.BALL_R >= s.y && b.y < s.y + 15 && b.vy >= 0) {
             b.y = s.y - CONFIG.BALL_R; b.vy = CONFIG.BOUNCE_UP;
             if (!s.active) {
                 const osc = audioCtx.createOscillator();
                 const g = audioCtx.createGain();
-                osc.type = 'sine'; // 慢速建議用 Sine 波，更柔和
+                osc.type = 'sine';
                 osc.frequency.setValueAtTime(s.freq, audioCtx.currentTime);
                 g.gain.setTargetAtTime(0.3, audioCtx.currentTime, 0.01);
-                g.gain.setTargetAtTime(0, audioCtx.currentTime + 0.2, 0.35); 
+                g.gain.setTargetAtTime(0, audioCtx.currentTime + 0.3, 0.4); 
                 osc.connect(g); g.connect(audioCtx.destination); g.connect(audioDest);
                 osc.start(); osc.stop(audioCtx.currentTime + 1.5);
                 s.active = 1; s.flash = 1.0;
@@ -241,8 +240,7 @@ function update() {
             }
         }
     });
-    // 鏡頭非常緩慢地跟隨
-    camX += (b.x - canvas.width/2 - camX) * 0.08; camY += (b.y - canvas.height/2 - camY) * 0.08;
+    camX += (b.x - canvas.width/2 - camX) * 0.1; camY += (b.y - canvas.height/2 - camY) * 0.1;
 }
 
 function draw() {
@@ -252,8 +250,8 @@ function draw() {
     gallery.forEach(item => { if (item.x > camX - 400 && item.x < camX + canvas.width + 500) drawFramedImage(item); });
     if (tracks[0]) {
         tracks[0].steps.forEach(s => {
-            if (s.x > camX - 200 && s.x < camX + canvas.width + 400) {
-                ctx.fillStyle = s.color; ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, 12, 6); ctx.fill();
+            if (s.x > camX - 400 && s.x < camX + canvas.width + 600) {
+                ctx.fillStyle = s.color; ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, 14, 7); ctx.fill();
                 if(s.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${s.flash})`; ctx.fill(); s.flash *= 0.95; }
             }
         });
