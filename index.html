@@ -3,22 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AI 木琴階梯機 - 絕不漏音版</title>
+    <title>AI 木琴階梯機 - 100% 準確版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --panel: rgba(15, 23, 42, 0.98); }
         body { margin: 0; background: #020617; color: #fff; font-family: sans-serif; overflow: hidden; touch-action: none; }
         #setupPanel { position: fixed; inset: 0; background: radial-gradient(circle at center, #1e293b, #020617); z-index: 5000; display: flex; justify-content: center; align-items: center; padding: 15px; }
-        .config-card { background: var(--panel); padding: 25px; border-radius: 20px; border: 1px solid #334155; width: 100%; max-width: 400px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        .config-card { background: var(--panel); padding: 25px; border-radius: 20px; border: 1px solid #334155; width: 100%; max-width: 400px; }
         .section-title { font-size: 13px; color: var(--accent); margin: 15px 0 5px 0; font-weight: bold; }
         .track-list { margin: 10px 0; max-height: 120px; overflow-y: auto; background: #070b14; border-radius: 10px; padding: 8px; border: 1px solid #1e293b; }
         .track-item { padding: 10px; margin-bottom: 5px; background: #1e293b; border-radius: 6px; cursor: pointer; font-size: 12px; }
         .track-item.active { background: var(--accent); border: 1px solid #fff; }
         .record-ui { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 1000; display: none; gap: 10px; background: var(--panel); padding: 10px 20px; border-radius: 40px; border: 1px solid #3b82f6; align-items: center; }
-        .ctrl-btn { border: none; padding: 8px 18px; border-radius: 15px; cursor: pointer; font-weight: bold; font-size: 14px; }
+        .ctrl-btn { border: none; padding: 10px 24px; border-radius: 15px; cursor: pointer; font-weight: bold; }
         #playBtn { background: #10b981; color: white; }
         #recBtn { background: #ef4444; color: white; }
-        input { width: 100%; padding: 12px; margin-bottom: 10px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: #fff; box-sizing: border-box; font-size: 14px; }
+        input { width: 100%; padding: 12px; margin-bottom: 10px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: #fff; box-sizing: border-box; }
         .btn { width: 100%; padding: 15px; border-radius: 10px; background: var(--accent); color: white; border:none; font-weight: bold; cursor:pointer; }
     </style>
 </head>
@@ -26,13 +26,13 @@
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="text-align:center; margin:0 0 15px 0; font-size: 20px;">🎹 絕不漏音穩定版</h2>
-        <div class="section-title">1. MIDI 軌道 (Mario 預載)</div>
+        <h2 style="text-align:center; margin:0 0 15px 0;">🛡️ 100% 命中穩定版</h2>
+        <div class="section-title">1. MIDI 軌道 (已預載)</div>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleMidiUpload(this)">
-        <div id="trackContainer" class="track-list">讀取中...</div>
+        <div id="trackContainer" class="track-list">掃描中...</div>
         <div class="section-title">2. 結束留言</div>
-        <input type="text" id="msgInit" value="Perfect Rhythm!">
-        <button id="entryBtn" class="btn" onclick="enterScene()" disabled>進入表演</button>
+        <input type="text" id="msgInit" value="Perfect Performance!">
+        <button id="entryBtn" class="btn" onclick="enterScene()" disabled>進入舞台</button>
     </div>
 </div>
 
@@ -53,10 +53,10 @@ let lastTime = 0;
 
 const cornerImg = new Image(); cornerImg.src = 'IMG_6604.png';
 
-// 物理參數 (加重型)
-const GRAVITY = 2200;      // 進一步增加重力使球更貼地
-const BALL_VX = 350;       // 稍微提高速度
-const BOUNCE_UP = -80;     // 極輕微彈跳，幾乎貼著走
+// 物理參數
+const GRAVITY = 2500;      
+const BALL_VX = 350;       
+const BOUNCE_UP = -50;     // 降低反彈，使球更貼板
 const STEP_Y_GAP = 15;     
 const BALL_R = 10;
 
@@ -76,10 +76,10 @@ function playXylophoneTone(freq, destination) {
     osc.type = 'triangle';
     osc.frequency.setValueAtTime(freq, now);
     gain.gain.setValueAtTime(0, now);
-    gain.gain.linearRampToValueAtTime(0.25, now + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+    gain.gain.linearRampToValueAtTime(0.3, now + 0.005);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
     osc.connect(gain); gain.connect(destination);
-    osc.start(now); osc.stop(now + 0.4);
+    osc.start(now); osc.stop(now + 0.3);
 }
 
 function handleMidiUpload(input) {
@@ -123,14 +123,15 @@ function buildSteps(track) {
     track.notes.forEach((n, i) => {
         let x = n.time * BALL_VX; 
         let w = n.duration * BALL_VX;
+        if (w < 15) w = 15; // 確保最小寬度防止穿透
         if (i > 0) {
             let gap = x - (steps[i-1].x + steps[i-1].w);
-            if (gap > 2) steps[i-1].w += (gap - 1); 
+            if (gap > 1) steps[i-1].w += gap; // 消除間隙
         }
         currentY += STEP_Y_GAP;
         steps.push({ x, y: currentY, w, freq: 440*Math.pow(2,(n.midi-69)/12), active: 0 });
     });
-    tracks = [{ steps, ball: { x: steps[0].x, y: steps[0].y - 50, vx: BALL_VX, vy: 0 }, cur: 0 }];
+    tracks = [{ steps, ball: { x: steps[0].x, y: steps[0].y - 100, vx: BALL_VX, vy: 0 }, cur: 0 }];
 }
 
 function togglePlay() {
@@ -142,58 +143,61 @@ function togglePlay() {
 function toggleRecord() {
     if (isRecording) return;
     chunks = [];
-    const stream = new MediaStream([...canvas.captureStream(30).getTracks(), ...audioDest.stream.getTracks()]);
-    recorder = new MediaRecorder(stream, { mimeType: 'video/webm', videoBitsPerSecond: 2500000 });
+    const stream = new MediaStream([...canvas.captureStream(60).getTracks(), ...audioDest.stream.getTracks()]);
+    recorder = new MediaRecorder(stream, { mimeType: 'video/webm', videoBitsPerSecond: 4000000 });
     recorder.ondataavailable = e => chunks.push(e.data);
     recorder.onstop = saveVideo;
     recorder.start();
     isRecording = true;
-    document.getElementById('recBtn').innerText = "⏹ 錄製中";
+    document.getElementById('recBtn').innerText = "⏹ 存檔中";
 }
 
 function saveVideo() {
     const blob = new Blob(chunks, { type: 'video/webm' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = `stable_perf_${Date.now()}.webm`; a.click();
+    a.download = `perfect_perf_${Date.now()}.webm`; a.click();
     setTimeout(() => location.reload(), 500);
 }
 
 function loop(timestamp) {
     let dt = (timestamp - lastTime) / 1000;
-    if (dt > 0.05) dt = 0.05; // 限制最大步長，提升碰撞穩定性
+    if (dt > 0.032) dt = 0.032; 
     lastTime = timestamp;
 
     if (isRunning && isBallMoving && !isFinishing) {
         const t = tracks[0], b = t.ball;
         
-        let oldY = b.y; // 記錄上一幀位置
+        let prevX = b.x;
+        let prevY = b.y;
 
         b.vy += GRAVITY * dt;
         b.x += b.vx * dt;
         b.y += b.vy * dt;
 
-        if (t.cur >= t.steps.length) {
-            isFinishing = true;
-            if(isRecording) setTimeout(() => recorder.stop(), 3000);
-        } else {
-            let s = t.steps[t.cur];
-            // 升級版碰撞偵測：檢查掃描區域
-            if (s && b.x >= s.x && b.x <= s.x + s.w) {
-                // 判斷球是否穿過或到達音階高度
-                const ballBottom = b.y + BALL_R;
-                const prevBallBottom = oldY + BALL_R;
-                
-                if (prevBallBottom <= s.y + 5 && ballBottom >= s.y) {
-                    b.y = s.y - BALL_R; // 強制修正位置
+        // 檢查當前與下一個音階
+        for (let i = t.cur; i < Math.min(t.cur + 3, t.steps.length); i++) {
+            let s = t.steps[i];
+            
+            // 範圍偵測：球的 X 路徑是否與音階 X 範圍重疊
+            if (b.x + BALL_R >= s.x && b.x - BALL_R <= s.x + s.w) {
+                // 幾何交點判斷：上一幀在上方，這一幀在下方
+                if (prevY + BALL_R <= s.y + 5 && b.y + BALL_R >= s.y) {
+                    b.y = s.y - BALL_R;
                     b.vy = BOUNCE_UP;
+                    t.cur = i; // 更新當前音階索引
                     if (!s.active) {
                         playXylophoneTone(s.freq, audioCtx.destination);
                         playXylophoneTone(s.freq, audioDest);
                         s.active = 1;
                     }
+                    break; 
                 }
             }
-            if (s && b.x > s.x + s.w) t.cur++;
+        }
+
+        if (t.cur >= t.steps.length - 1 && b.x > t.steps[t.steps.length-1].x + t.steps[t.steps.length-1].w) {
+            isFinishing = true;
+            if(isRecording) setTimeout(() => recorder.stop(), 3000);
         }
         
         camX += (b.x - canvas.width/2 - camX) * 0.2;
@@ -213,9 +217,14 @@ function draw() {
     
     if (tracks[0]) {
         for (let s of tracks[0].steps) {
-            if(s.x > camX - 100 && s.x < camX + canvas.width + 100) {
+            if(s.x > camX - 200 && s.x < camX + canvas.width + 200) {
                 ctx.fillStyle = s.active ? "#fff" : "rgba(59, 130, 246, 0.4)";
-                ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, 12, 6); ctx.fill();
+                ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, 14, 7); ctx.fill();
+                if(s.active) { // 擊中特效
+                    ctx.shadowBlur = 15; ctx.shadowColor = "#fff";
+                    ctx.strokeStyle = "#fff"; ctx.stroke();
+                    ctx.shadowBlur = 0;
+                }
             }
         }
         if (!isFinishing) {
@@ -228,9 +237,9 @@ function draw() {
     if (isFinishing) {
         ctx.fillStyle = "rgba(0,0,0,0.85)";
         ctx.fillRect(0,0,canvas.width, canvas.height);
-        ctx.fillStyle = "white"; ctx.font = "bold 30px sans-serif"; ctx.textAlign = "center";
+        ctx.fillStyle = "white"; ctx.font = "bold 35px sans-serif"; ctx.textAlign = "center";
         ctx.fillText(currentMsg, canvas.width/2, canvas.height/2);
-        if (cornerImg.complete) ctx.drawImage(cornerImg, canvas.width/2-80, canvas.height/2+50, 160, 160);
+        if (cornerImg.complete) ctx.drawImage(cornerImg, canvas.width/2-100, canvas.height/2+50, 200, 200);
     }
 }
 </script>
