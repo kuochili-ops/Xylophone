@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴工坊 - 長音板慢速版</title>
+    <title>AI 木琴工坊 - MIDI 等速同步版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --panel: rgba(15, 23, 42, 0.98); }
@@ -27,14 +27,14 @@
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="margin:0;">🎹 長音板慢速展演</h2>
+        <h2 style="margin:0;">⏱️ MIDI 等速同步版</h2>
         <div class="section-title">1. MIDI 軌道 (點擊試聽)</div>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleMidiUpload(this)">
-        <div id="trackContainer" class="track-list">準備中...</div>
+        <div id="trackContainer" class="track-list">讀取音樂中...</div>
         <div class="section-title">2. 照片廊道 (多選)</div>
         <input type="file" id="galleryFiles" multiple accept="image/*">
         <div class="section-title">3. 結束留言</div>
-        <input type="text" id="msgInit" value="A Serene Masterpiece. 終">
+        <input type="text" id="msgInit" value="Sync Performance. 終">
         <button id="entryBtn" class="btn" onclick="enterScene()" disabled>確認並進入</button>
     </div>
 </div>
@@ -47,12 +47,14 @@
 <canvas id="stage"></canvas>
 
 <script>
+// 等速核心參數
+const TIME_SCALE = 200; // 每秒佔 200 像素
 const CONFIG = { 
-    GRAVITY: 0.6,
-    BALL_VX: 2.70,       
-    BOUNCE_UP: -0.45, 
+    GRAVITY: 0.8,
+    BALL_VX: TIME_SCALE / 60, // 精準對應 60fps 下的移動量，確保 x = time * TIME_SCALE
+    BOUNCE_UP: -0.6, 
     STEP_Y_GAP: 15, 
-    TIME_SCALE: 166,     
+    TIME_SCALE: TIME_SCALE,     
     BALL_R: 10 
 };
 
@@ -167,25 +169,15 @@ function buildSteps(track) {
     notes.forEach((n, i) => {
         let x = n.time * CONFIG.TIME_SCALE;
         let w = n.duration * CONFIG.TIME_SCALE;
-        
-        // 恢復上一版本的計算方式：將間隙合併到音板長度中
         if (i < notes.length - 1) {
             let nextX = notes[i+1].time * CONFIG.TIME_SCALE;
             let gap = nextX - (x + w);
             if (gap > 0) w += gap; 
         }
-        
         currentY += CONFIG.STEP_Y_GAP;
-        steps.push({ 
-            x, 
-            y: currentY, 
-            w: Math.max(w, 40), 
-            freq: 440*Math.pow(2,(n.midi-69)/12), 
-            color: `hsla(${(n.midi*15)%360}, 75%, 60%, 0.8)`, 
-            active: 0, 
-            flash: 0 
-        });
+        steps.push({ x, y: currentY, w: Math.max(w, 40), freq: 440*Math.pow(2,(n.midi-69)/12), color: `hsla(${(n.midi*15)%360}, 75%, 60%, 0.8)`, active: 0, flash: 0 });
     });
+    // 初始位置精準對齊第一個音符
     tracks = [{ steps, ball: { x: steps[0].x, y: steps[0].y - 30, vx: CONFIG.BALL_VX, vy: 0 }, cur: 0 }];
 }
 
@@ -202,7 +194,7 @@ function startRecording() {
     recorder.onstop = () => {
         const blob = new Blob(chunks, { type: 'video/webm' });
         const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-        a.download = `show_${Date.now()}.webm`; a.click();
+        a.download = `sync_show_${Date.now()}.webm`; a.click();
         setTimeout(() => location.reload(), 1000);
     };
     recorder.start(100);
@@ -221,11 +213,12 @@ function update() {
         if (!s.active) {
             const osc = audioCtx.createOscillator();
             const g = audioCtx.createGain();
-            osc.type = 'triangle'; osc.frequency.setValueAtTime(s.freq, audioCtx.currentTime);
+            osc.type = 'triangle'; 
+            osc.frequency.setValueAtTime(s.freq, audioCtx.currentTime);
             g.gain.setTargetAtTime(0.3, audioCtx.currentTime, 0.01);
-            g.gain.setTargetAtTime(0, audioCtx.currentTime + 0.15, 0.1);
+            g.gain.setTargetAtTime(0, audioCtx.currentTime + 0.1, 0.1);
             osc.connect(g); g.connect(audioCtx.destination); g.connect(audioDest);
-            osc.start(); osc.stop(audioCtx.currentTime + 0.6);
+            osc.start(); osc.stop(audioCtx.currentTime + 0.5);
             s.active = 1; s.flash = 1.0;
         }
     }
