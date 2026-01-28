@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴工坊 - MIDI 等速同步版</title>
+    <title>AI 木琴工坊 - 舒緩慢速同步版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --panel: rgba(15, 23, 42, 0.98); }
@@ -27,14 +27,14 @@
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="margin:0;">⏱️ MIDI 等速同步版</h2>
+        <h2 style="margin:0;">🍃 舒緩慢速同步版</h2>
         <div class="section-title">1. MIDI 軌道 (點擊試聽)</div>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleMidiUpload(this)">
         <div id="trackContainer" class="track-list">讀取音樂中...</div>
         <div class="section-title">2. 照片廊道 (多選)</div>
         <input type="file" id="galleryFiles" multiple accept="image/*">
         <div class="section-title">3. 結束留言</div>
-        <input type="text" id="msgInit" value="Sync Performance. 終">
+        <input type="text" id="msgInit" value="A Serene Performance. 終">
         <button id="entryBtn" class="btn" onclick="enterScene()" disabled>確認並進入</button>
     </div>
 </div>
@@ -47,12 +47,12 @@
 <canvas id="stage"></canvas>
 
 <script>
-// 等速核心參數
-const TIME_SCALE = 200; // 每秒佔 200 像素
+// 調慢後的同步參數
+const TIME_SCALE = 140; // 每秒佔 140 像素，節奏更慢
 const CONFIG = { 
-    GRAVITY: 0.8,
-    BALL_VX: TIME_SCALE / 60, // 精準對應 60fps 下的移動量，確保 x = time * TIME_SCALE
-    BOUNCE_UP: -0.6, 
+    GRAVITY: 0.5,           // 配合慢速，降低重力讓球跳得更輕盈
+    BALL_VX: TIME_SCALE / 60, 
+    BOUNCE_UP: -0.4, 
     STEP_Y_GAP: 15, 
     TIME_SCALE: TIME_SCALE,     
     BALL_R: 10 
@@ -76,13 +76,6 @@ async function ensureAudioStarted() {
     }
     if (audioCtx.state === 'suspended') await audioCtx.resume();
 }
-
-window.addEventListener('load', async () => {
-    try {
-        const res = await fetch('./Mario Bros. - Super Mario Bros. Theme.mid');
-        if (res.ok) parseMidi(await res.arrayBuffer());
-    } catch (e) { document.getElementById('trackContainer').innerText = "請手動上傳 MIDI"; }
-});
 
 function parseMidi(buf) {
     fullMidi = new Midi(buf);
@@ -177,7 +170,6 @@ function buildSteps(track) {
         currentY += CONFIG.STEP_Y_GAP;
         steps.push({ x, y: currentY, w: Math.max(w, 40), freq: 440*Math.pow(2,(n.midi-69)/12), color: `hsla(${(n.midi*15)%360}, 75%, 60%, 0.8)`, active: 0, flash: 0 });
     });
-    // 初始位置精準對齊第一個音符
     tracks = [{ steps, ball: { x: steps[0].x, y: steps[0].y - 30, vx: CONFIG.BALL_VX, vy: 0 }, cur: 0 }];
 }
 
@@ -194,7 +186,7 @@ function startRecording() {
     recorder.onstop = () => {
         const blob = new Blob(chunks, { type: 'video/webm' });
         const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-        a.download = `sync_show_${Date.now()}.webm`; a.click();
+        a.download = `relaxing_show_${Date.now()}.webm`; a.click();
         setTimeout(() => location.reload(), 1000);
     };
     recorder.start(100);
@@ -216,9 +208,9 @@ function update() {
             osc.type = 'triangle'; 
             osc.frequency.setValueAtTime(s.freq, audioCtx.currentTime);
             g.gain.setTargetAtTime(0.3, audioCtx.currentTime, 0.01);
-            g.gain.setTargetAtTime(0, audioCtx.currentTime + 0.1, 0.1);
+            g.gain.setTargetAtTime(0, audioCtx.currentTime + 0.15, 0.15);
             osc.connect(g); g.connect(audioCtx.destination); g.connect(audioDest);
-            osc.start(); osc.stop(audioCtx.currentTime + 0.5);
+            osc.start(); osc.stop(audioCtx.currentTime + 0.6);
             s.active = 1; s.flash = 1.0;
         }
     }
