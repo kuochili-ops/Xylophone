@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>木琴工坊 - Perfect Ending</title>
+    <title>木琴工坊 - Smooth Rolling</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --success: #10b981; }
@@ -13,15 +13,11 @@
         .track-list { max-height: 150px; overflow-y: auto; background: #070b14; border-radius: 12px; border: 1px solid #1e293b; margin: 10px 0; }
         .track-item { padding: 10px; border-bottom: 1px solid #1e293b; font-size: 13px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
         .track-item.active { background: rgba(59, 130, 246, 0.2); border-left: 4px solid var(--accent); }
-        .preview-btn { background: #334155; color: #fff; border: none; border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 11px; }
-        #photoPreview { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; margin-top: 10px; }
-        .photo-thumb { aspect-ratio: 1; background: #1e293b; border-radius: 6px; overflow: hidden; }
-        .photo-thumb img { width: 100%; height: 100%; object-fit: cover; }
         .record-ui { position: fixed; bottom: 40px; left: 0; right: 0; z-index: 1000; display: none; justify-content: center; gap: 30px; }
         .btn-main { width: 75px; height: 75px; border-radius: 50%; border: none; font-weight: bold; color: white; cursor: pointer; }
         #playBtn { background: var(--success); }
         #recBtn { background: #ef4444; border: 4px solid #fff; }
-        #recBtn.is-recording { border-radius: 12px; background: #991b1b; }
+        #recBtn.is-recording { border-radius: 12px; }
         input, .primary-btn { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #334155; background: #0f172a; color: #fff; margin-bottom: 10px; box-sizing: border-box; }
         .primary-btn { background: var(--accent); font-weight: bold; cursor: pointer; padding: 18px; }
     </style>
@@ -30,9 +26,10 @@
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="text-align:center; margin:0 0 15px 0;">🎹 木琴工坊 Pro</h2>
-        <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleManualMidi(this)">
-        <div id="trackContainer" class="track-list">正在載入預設 MIDI...</div>
+        <h2 style="text-align:center; margin:0 0 15px 0;">🎹 翻牌木琴 Pro</h2>
+        <label style="font-size: 12px; color: #94a3b8;">1. MIDI 選擇 (預設已載入 Mario)</label>
+        <div id="trackContainer" class="track-list">正在載入...</div>
+        <label style="font-size: 12px; color: #94a3b8;">2. 廊道照片</label>
         <input type="file" id="galleryFiles" multiple accept="image/*" onchange="previewImages(this)">
         <div id="photoPreview"></div>
         <input type="text" id="msgInit" value="Fantastic Harmony!">
@@ -75,8 +72,9 @@ const ctx = canvas.getContext('2d', { alpha: false });
 let audioCtx, tracks = [], isRunning = false, isBallMoving = false, gallery = [];
 let camX = 0, camY = 0, recorder, chunks = [], audioDest, selectedTrackData = null;
 let isFinishing = false, isRecording = false, lastTime = 0;
+
 const cornerImg = new Image(); cornerImg.src = 'IMG_6604.png';
-const GRAVITY = 3600, BALL_VX = 380, BOUNCE_UP = -1100, BALL_R = 12;
+const GRAVITY = 3600, BALL_VX = 380, BOUNCE_UP = -1050, BALL_R = 12; // 稍微減弱反彈力
 const NOTE_COLORS = ["#FF5252", "#FF4081", "#E040FB", "#7C4DFF", "#536DFE", "#448AFF", "#40C4FF", "#18FFFF", "#64FFDA", "#69F0AE", "#B2FF59", "#EEFF41"];
 
 canvas.width = window.innerWidth; canvas.height = window.innerHeight;
@@ -85,13 +83,8 @@ window.addEventListener('load', async () => {
     try {
         const res = await fetch('Mario Bros. - Super Mario Bros. Theme.mid');
         if (res.ok) processMidiBuffer(await res.arrayBuffer());
-    } catch (e) { document.getElementById('trackContainer').innerText = "請手動上傳 MIDI"; }
+    } catch (e) { document.getElementById('trackContainer').innerText = "請上傳 MIDI"; }
 });
-
-function handleManualMidi(input) {
-    if(!input.files[0]) return;
-    input.files[0].arrayBuffer().then(processMidiBuffer);
-}
 
 function processMidiBuffer(buf) {
     const fullMidi = new Midi(buf);
@@ -101,7 +94,7 @@ function processMidiBuffer(buf) {
         if(t.notes.length === 0) return;
         const item = document.createElement('div');
         item.className = "track-item";
-        item.innerHTML = `<div><strong>Track ${i+1}</strong> (${t.notes.length})</div><button class="preview-btn" onclick="previewTrack(event, ${i})">▶️ 試聽</button>`;
+        item.innerHTML = `<div><strong>Track ${i+1}</strong> (${t.notes.length})</div>`;
         item.onclick = () => {
             selectedTrackData = t;
             document.querySelectorAll('.track-item').forEach(el => el.classList.remove('active'));
@@ -110,21 +103,6 @@ function processMidiBuffer(buf) {
         container.appendChild(item);
     });
     window.currentMidiData = fullMidi;
-}
-
-function previewTrack(e, idx) {
-    e.stopPropagation();
-    if(!audioCtx) audioCtx = new AudioContext();
-    const track = window.currentMidiData.tracks[idx];
-    const now = audioCtx.currentTime;
-    track.notes.slice(0, 15).forEach(n => {
-        const o = audioCtx.createOscillator(); const g = audioCtx.createGain();
-        o.frequency.setValueAtTime(440 * Math.pow(2, (n.midi-69)/12), now + n.time);
-        g.gain.setValueAtTime(0.2, now + n.time);
-        g.gain.exponentialRampToValueAtTime(0.001, now + n.time + 0.5);
-        o.connect(g); g.connect(audioCtx.destination);
-        o.start(now + n.time); o.stop(now + n.time + 0.5);
-    });
 }
 
 function previewImages(input) {
@@ -161,10 +139,14 @@ function buildSteps(track) {
         steps.push(new FlipBoard(n.time * BALL_VX, startY + (i * 20), Math.max(n.duration * BALL_VX, 60), 15, 440*Math.pow(2,(n.midi-69)/12), NOTE_COLORS[n.midi % 12]));
     });
     const fS = steps[0];
-    tracks = [{ steps, ball: { x: fS.x - 450, y: fS.y - BALL_R, vx: BALL_VX, vy: 0, rotation: 0 }, cur: 0, isFirstStrike: true }];
+    // 💡 修正：球的高度精確貼合第一個音板表面， vy 設為 0 以啟動「滾動模式」
+    tracks = [{ 
+        steps, 
+        ball: { x: fS.x - 450, y: fS.y - BALL_R, vx: BALL_VX, vy: 0, rotation: 0 }, 
+        cur: 0, 
+        isRolling: true // 初始狀態設為滾動
+    }];
 }
-
-function togglePlay() { isBallMoving = !isBallMoving; document.getElementById('playBtn').innerText = isBallMoving ? "暫停" : "播放"; }
 
 function loop(timestamp) {
     let dt = Math.min((timestamp - lastTime) / 1000, 0.02);
@@ -173,20 +155,32 @@ function loop(timestamp) {
         if (isBallMoving) {
             const t = tracks[0], b = t.ball;
             let prevY = b.y;
-            if (t.isFirstStrike) {
-                b.x += b.vx * dt;
-                if (b.x >= t.steps[0].x) { b.x = t.steps[0].x; b.vy = BOUNCE_UP; t.isFirstStrike = false; hitStep(t.steps[0]); }
-            } else {
-                b.vy += GRAVITY * dt; b.x += b.vx * dt; b.y += b.vy * dt;
-                b.rotation += (b.vx * dt) / BALL_R;
-                for (let i = t.cur; i < Math.min(t.cur + 8, t.steps.length); i++) {
-                    let s = t.steps[i];
-                    if (b.x >= s.x && b.x <= s.x + s.w && prevY + BALL_R <= s.y + 10 && b.y + BALL_R >= s.y) {
-                        b.y = s.y - BALL_R; b.vy = BOUNCE_UP; t.cur = i; hitStep(s); break;
+
+            // 物理演算：模擬滾動 vs 跳躍
+            b.vy += GRAVITY * dt;
+            b.x += b.vx * dt;
+            b.y += b.vy * dt;
+            b.rotation += (b.vx * dt) / BALL_R;
+
+            for (let i = t.cur; i < Math.min(t.cur + 8, t.steps.length); i++) {
+                let s = t.steps[i];
+                // 碰撞判定優化：減少垂直反彈，增加水平黏滯感
+                if (b.x >= s.x && b.x <= s.x + s.w && prevY + BALL_R <= s.y + 10 && b.y + BALL_R >= s.y) {
+                    b.y = s.y - BALL_R;
+                    
+                    // 如果高度落差極小 (滾動中)，給予極小的向上力維持滾動質感
+                    // 如果落差大於 10px，才執行 BOUNCE_UP 跳躍
+                    if (Math.abs(b.vy) < 200) {
+                        b.vy = -100; // 微弱向上力避免卡住，模擬平滑滾動
+                    } else {
+                        b.vy = BOUNCE_UP;
                     }
+                    
+                    if (t.cur !== i) { hitStep(s); t.cur = i; }
+                    break;
                 }
             }
-            // 墜落自動偵測 -> 啟動延遲結束
+
             if (t.cur >= t.steps.length - 1 && b.y > t.steps[t.steps.length-1].y + 500) triggerEndSequence();
             camX += (b.x - canvas.width * 0.25 - camX) * 0.1;
             camY += (b.y - canvas.height * 0.55 - camY) * 0.1;
@@ -239,6 +233,19 @@ function draw() {
     }
 }
 
+function triggerEndSequence() {
+    if (isFinishing) return;
+    isFinishing = true; isBallMoving = false;
+    document.getElementById('recordUI').style.display = 'none';
+    let endTimer = 0;
+    const holdAndFinish = () => {
+        draw(); endTimer++;
+        if (endTimer < 180) requestAnimationFrame(holdAndFinish);
+        else { if(recorder && recorder.state !== 'inactive') recorder.stop(); else location.reload(); }
+    };
+    holdAndFinish();
+}
+
 function handleRecording() {
     if (!isRecording) {
         chunks = []; const stream = canvas.captureStream(30);
@@ -251,33 +258,12 @@ function handleRecording() {
     } else triggerEndSequence();
 }
 
-/** 延遲結束核心邏輯 **/
-function triggerEndSequence() {
-    if (isFinishing) return;
-    isFinishing = true; isBallMoving = false;
-    document.getElementById('recordUI').style.display = 'none';
-    
-    let endTimer = 0;
-    const holdAndFinish = () => {
-        draw(); 
-        endTimer++;
-        if (endTimer < 180) { // 延遲約 3 秒 (60fps * 3)
-            requestAnimationFrame(holdAndFinish);
-        } else {
-            if(recorder && recorder.state !== 'inactive') {
-                recorder.stop();
-            } else {
-                location.reload();
-            }
-        }
-    };
-    holdAndFinish();
-}
+function togglePlay() { isBallMoving = !isBallMoving; document.getElementById('playBtn').innerText = isBallMoving ? "暫停" : "播放"; }
 
 function saveVideo() {
     const blob = new Blob(chunks, { type: 'video/mp4' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = `harmony_video_${Date.now()}.mp4`; a.click();
+    a.download = `rolling_harmony_${Date.now()}.mp4`; a.click();
     setTimeout(() => location.reload(), 2000);
 }
 </script>
