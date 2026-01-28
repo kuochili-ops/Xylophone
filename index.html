@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>木琴工坊 - 廣角錄影版</title>
+    <title>木琴工坊 - Ending Fix Pro</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; }
@@ -17,7 +17,7 @@
         .photo-thumb { aspect-ratio: 1; background: #1e293b; border-radius: 6px; overflow: hidden; }
         .photo-thumb img { width: 100%; height: 100%; object-fit: cover; }
         .record-ui { position: fixed; bottom: 40px; left: 0; right: 0; z-index: 1000; display: none; justify-content: center; gap: 30px; }
-        .btn-main { width: 75px; height: 75px; border-radius: 50%; border: none; font-weight: bold; color: white; cursor: pointer; }
+        .btn-main { width: 75px; height: 75px; border-radius: 50%; border: none; font-weight: bold; color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; }
         #playBtn { background: #10b981; }
         #recBtn { background: #ef4444; border: 4px solid #fff; }
         #recBtn.is-recording { border-radius: 12px; background: #991b1b; }
@@ -29,12 +29,12 @@
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="text-align:center;">🎬 廣角錄影修正版</h2>
+        <h2 style="text-align:center;">🎯 Ending 錄製強化版</h2>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleMidiUpload(this)">
         <div id="trackContainer" class="track-list">讀取預設中...</div>
         <input type="file" id="galleryFiles" multiple accept="image/*" onchange="previewImages(this)">
         <div id="photoPreview"></div>
-        <input type="text" id="msgInit" value="Fantastic Harmony!">
+        <input type="text" id="msgInit" value="Thanks for Watching!">
         <button id="entryBtn" class="primary-btn" onclick="enterScene()" disabled>進入舞台</button>
     </div>
 </div>
@@ -53,7 +53,7 @@ let audioCtx, tracks = [], isRunning = false, isBallMoving = false, fullMidi, ga
 let camX = 0, camY = 0, recorder, chunks = [], audioDest, selectedTrackIdx = -1;
 let isFinishing = false, isRecording = false, currentMsg = "";
 let lastTime = 0, isInitialSlide = true;
-let zoomScale = 0.75; // 預設廣角縮放值
+let zoomScale = 0.8;
 
 const cornerImg = new Image(); cornerImg.src = 'IMG_6604.png';
 const GRAVITY = 3500, BALL_VX = 360, BOUNCE_UP = -30, BALL_R = 12;
@@ -88,7 +88,7 @@ function parseMidi(buf) {
     fullMidi.tracks.forEach((t, i) => {
         if(t.notes.length === 0) return;
         const item = document.createElement('div'); item.className = "track-item";
-        item.innerHTML = `音軌 ${i+1} (${t.notes.length} 音符)`;
+        item.innerHTML = `Track ${i+1} (${t.notes.length} notes)`;
         item.onclick = () => {
             selectedTrackIdx = i;
             document.querySelectorAll('.track-item').forEach(e => e.classList.remove('active'));
@@ -110,9 +110,9 @@ async function enterScene() {
         await new Promise(r => img.onload = r);
         const dispW = 320;
         const dispH = dispW * (img.height / img.width);
-        // 將照片放得更高，並配合 Zoom Out 視野
+        // 照片位置：調整為更靠近音階 (s.y - dispH - 120)
         const s = tracks[0].steps[Math.floor((i/gFiles.length)*tracks[0].steps.length)];
-        gallery.push({ img, x: s.x + 80, y: s.y - dispH - 250, w: dispW, h: dispH });
+        gallery.push({ img, x: s.x + 80, y: s.y - dispH - 120, w: dispW, h: dispH });
     }
 
     document.getElementById('setupPanel').style.display = 'none';
@@ -145,6 +145,7 @@ function togglePlay() {
 function handleRecording() {
     if (!isRecording) {
         chunks = [];
+        // 增加錄製幀率穩定性
         const stream = canvas.captureStream(30);
         const combined = new MediaStream([...stream.getTracks(), ...audioDest.stream.getTracks()]);
         recorder = new MediaRecorder(combined, { mimeType: 'video/webm;codecs=vp9', videoBitsPerSecond: 8000000 });
@@ -153,38 +154,45 @@ function handleRecording() {
         recorder.start(100);
         isRecording = true;
         document.getElementById('recBtn').classList.add('is-recording');
-        document.getElementById('recBtn').innerText = "結束";
+        document.getElementById('recBtn').innerText = "STOP";
     } else {
         triggerEndSequence();
     }
 }
 
 function triggerEndSequence() {
+    // 進入結束流程：停止球移動、隱藏 UI
     isFinishing = true;
     isBallMoving = false;
     document.getElementById('recordUI').style.display = 'none';
     
-    // 重要：在 3 秒期間持續強制繪製畫布，確保錄影機能抓到每一幀
-    let endFrames = 0;
-    const forceDraw = () => {
-        if(endFrames < 100) { // 大約 3 秒 (30fps * 3 = 90)
-            draw();
-            endFrames++;
-            requestAnimationFrame(forceDraw);
+    // 核心修復：強制在 Ending 畫面停留 4 秒，並維持繪製循環
+    let waitFrames = 120; // 30fps * 4s
+    const processEnding = () => {
+        if(waitFrames > 0) {
+            draw(); // 強制重繪
+            waitFrames--;
+            requestAnimationFrame(processEnding);
         } else {
-            if(recorder && recorder.state !== 'inactive') recorder.stop();
+            // 真正停止錄影
+            if(recorder && recorder.state !== 'inactive') {
+                recorder.stop();
+            }
         }
     };
-    forceDraw();
+    processEnding();
 }
 
 function saveVideo() {
+    // 將 Blob 標記為 mp4 下載
     const blob = new Blob(chunks, { type: 'video/mp4' });
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `music_final_${Date.now()}.mp4`;
+    a.href = url;
+    a.download = `music_capture_${Date.now()}.mp4`;
     a.click();
-    setTimeout(() => location.reload(), 1500);
+    // 延遲一點再重整，給下載留時間
+    setTimeout(() => location.reload(), 2000);
 }
 
 function loop(timestamp) {
@@ -213,9 +221,9 @@ function loop(timestamp) {
                     }
                 }
             }
-            // 廣角相機跟隨邏輯：將目標點放在螢幕中心偏右下方，騰出上方空間給照片
+            // 鏡頭稍微往上提，讓照片跟音階距離更協調
             camX += (b.x - canvas.width * 0.25 - camX) * 0.1;
-            camY += (b.y - canvas.height * 0.6 - camY) * 0.1;
+            camY += (b.y - canvas.height * 0.55 - camY) * 0.1;
         }
         draw();
         requestAnimationFrame(loop);
@@ -239,49 +247,52 @@ function draw() {
     ctx.fillStyle = "#020617"; ctx.fillRect(0, 0, canvas.width, canvas.height);
     
     ctx.save();
-    // 實施廣角 Zoom Out (縮放畫布)
+    // 全域縮放，視野更寬闊
     ctx.translate(canvas.width/2, canvas.height/2);
     ctx.scale(zoomScale, zoomScale);
     ctx.translate(-canvas.width/2, -canvas.height/2);
     
     ctx.translate(-Math.round(camX), -Math.round(camY));
     
+    // 繪製照片
     gallery.forEach(p => {
-        if(p.x > camX - 1200 && p.x < camX + canvas.width + 1200) {
-            ctx.fillStyle = "rgba(255,255,255,0.08)";
-            ctx.fillRect(p.x - 8, p.y - 8, p.w + 16, p.h + 16);
+        if(p.x > camX - 1000 && p.x < camX + canvas.width + 1000) {
+            ctx.fillStyle = "rgba(255,255,255,0.1)";
+            ctx.fillRect(p.x - 6, p.y - 6, p.w + 12, p.h + 12);
             ctx.drawImage(p.img, p.x, p.y, p.w, p.h);
         }
     });
 
     if (tracks[0]) {
         for (let s of tracks[0].steps) {
-            if(s.x + s.w > camX - 1000 && s.x < canvas.width + camX + 1500) {
-                ctx.fillStyle = s.active ? "#fff" : s.color + "99";
+            if(s.x + s.w > camX - 1200 && s.x < canvas.width + camX + 1200) {
+                ctx.fillStyle = s.active ? "#fff" : s.color + "AA";
                 ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, 20, 10); ctx.fill();
             }
         }
         if (!isFinishing) {
             ctx.fillStyle = "#ef4444";
             ctx.beginPath(); ctx.arc(tracks[0].ball.x, tracks[0].ball.y, BALL_R, 0, Math.PI*2); ctx.fill();
+            // 球的光影點綴
+            ctx.fillStyle = "rgba(255,255,255,0.3)";
+            ctx.beginPath(); ctx.arc(tracks[0].ball.x - 4, tracks[0].ball.y - 4, 3, 0, Math.PI*2); ctx.fill();
         }
     }
     ctx.restore();
 
+    // Ending 繪製：確保它繪製在最終渲染的畫布上
     if (isFinishing) {
-        // Ending 層級繪製，不隨相機縮放，確保全屏覆蓋
-        ctx.fillStyle = "rgba(0,0,0,0.95)"; 
+        ctx.fillStyle = "rgba(0,0,0,0.94)"; 
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         
         ctx.fillStyle = "#fff"; 
-        ctx.font = "bold 38px sans-serif"; 
+        ctx.font = "bold 36px sans-serif"; 
         ctx.textAlign = "center";
         ctx.fillText(currentMsg, canvas.width/2, canvas.height/2);
         
         if (cornerImg.complete) {
-            const size = 130;
-            // 右下角「終」
-            ctx.drawImage(cornerImg, canvas.width - size - 30, canvas.height - size - 80, size, size);
+            const size = 120;
+            ctx.drawImage(cornerImg, canvas.width - size - 40, canvas.height - size - 60, size, size);
         }
     }
 }
