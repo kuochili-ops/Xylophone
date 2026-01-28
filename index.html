@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴工坊 - 手動終止版</title>
+    <title>AI 木琴工坊 - 完美收尾版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --panel: rgba(15, 23, 42, 0.98); }
@@ -17,8 +17,7 @@
         .ctrl-btn { border: none; padding: 10px 25px; border-radius: 20px; cursor: pointer; font-weight: bold; transition: all 0.3s; }
         #playBtn { background: #10b981; color: white; }
         #recBtn { background: #ef4444; color: white; }
-        #recBtn.is-recording { background: #f59e0b; color: #000; animation: pulse 1.5s infinite; }
-        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
+        #recBtn.is-recording { background: #f59e0b; color: #000; }
         input { width: 100%; padding: 12px; margin-bottom: 10px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: #fff; box-sizing: border-box; }
         .btn { width: 100%; padding: 15px; border-radius: 10px; background: var(--accent); color: white; border:none; font-weight: bold; cursor:pointer; }
         .btn:disabled { opacity: 0.3; }
@@ -28,21 +27,21 @@
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="margin:0;">⚙️ 展演控制中心</h2>
+        <h2 style="margin:0;">🎬 完美展演設定</h2>
         <div class="section-title">1. MIDI 軌道 (預載 Mario)</div>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleMidiUpload(this)">
         <div id="trackContainer" class="track-list">讀取中...</div>
         <div class="section-title">2. 廊道照片</div>
         <input type="file" id="galleryFiles" multiple accept="image/*">
         <div class="section-title">3. 結束留言</div>
-        <input type="text" id="msgInit" value="Thanks for Watching!">
-        <button id="entryBtn" class="btn" onclick="enterScene()" disabled>確認並啟動</button>
+        <input type="text" id="msgInit" value="Performance Complete!">
+        <button id="entryBtn" class="btn" onclick="enterScene()" disabled>確認並進入場景</button>
     </div>
 </div>
 
 <div class="record-ui" id="recordUI">
     <button id="playBtn" class="ctrl-btn" onclick="togglePlay()">▶ 播放球</button>
-    <button id="recBtn" class="ctrl-btn" onclick="handleRecClick()">🔴 錄製啟動</button>
+    <button id="recBtn" class="ctrl-btn" onclick="handleRecClick()">🔴 啟動錄製</button>
 </div>
 
 <canvas id="stage"></canvas>
@@ -50,7 +49,8 @@
 <script>
 const CONFIG = {
     GRAVITY: 1.2, BALL_VX: 5.2, BOUNCE_UP: -0.5, STEP_Y_GAP: 15,
-    TIME_SCALE: 310, BALL_R: 10, END_DELAY: 3000
+    TIME_SCALE: 310, BALL_R: 10, 
+    SAVE_DELAY: 2500 // 停留 2.5 秒確保錄到結束畫面
 };
 
 const canvas = document.getElementById('stage');
@@ -143,12 +143,11 @@ function togglePlay() {
     document.getElementById('playBtn').innerText = isBallMoving ? "⏸ 暫停" : "▶ 播放";
 }
 
-// --- 錄影與終止邏輯 ---
+// --- 錄影控制與完美收尾 ---
 function handleRecClick() {
     if (!isRecording) {
         startRecording();
     } else {
-        // 第二次按下：手動觸發結束流程
         triggerFinish();
     }
 }
@@ -157,8 +156,6 @@ function startRecording() {
     initAudio();
     chunks = [];
     const stream = new MediaStream([...canvas.captureStream(60).getTracks(), ...audioDest.stream.getTracks()]);
-    
-    // 優先使用 mp4 格式，若不支援則用 webm
     const mimeType = ['video/mp4', 'video/webm;codecs=vp9'].find(m => MediaRecorder.isTypeSupported(m));
     
     recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 12000000 });
@@ -175,7 +172,7 @@ function startRecording() {
     recorder.start(200);
     isRecording = true;
     const btn = document.getElementById('recBtn');
-    btn.innerText = "⏹ 結束並存檔";
+    btn.innerText = "⏹ 結束存檔";
     btn.classList.add('is-recording');
 }
 
@@ -183,9 +180,15 @@ function triggerFinish() {
     if (isFinishing) return;
     isFinishing = true;
     isBallMoving = false;
-    // 停止所有正在播放的音訊節點 (可選)
+    
+    document.getElementById('recBtn').innerText = "⌛ 處理影片...";
+    document.getElementById('recBtn').disabled = true;
+
+    // 關鍵：等待 2.5 秒後才真正停止 MediaRecorder，確保留言板被錄進去
     if (isRecording && recorder.state === 'recording') {
-        setTimeout(() => recorder.stop(), CONFIG.END_DELAY);
+        setTimeout(() => {
+            recorder.stop();
+        }, CONFIG.SAVE_DELAY);
     }
 }
 
@@ -228,7 +231,6 @@ function draw() {
     ctx.save();
     ctx.translate(-Math.round(camX), -Math.round(camY));
     
-    // 繪製木框廊道
     gallery.forEach(item => {
         const h = item.w * (item.img.height / item.img.width);
         const border = 14;
@@ -256,7 +258,6 @@ function draw() {
     }
     ctx.restore();
     
-    // 結束畫面 (淡入留言板)
     if (isFinishing) {
         finishAlpha = Math.min(finishAlpha + 0.02, 1);
         ctx.fillStyle = `rgba(0,0,0,${finishAlpha * 0.85})`;
