@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>AI 木琴工坊 - 慢速展演版</title>
+    <title>AI 木琴工坊 - 極致慢速版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --panel: rgba(15, 23, 42, 0.98); }
@@ -16,7 +16,7 @@
         .track-item.active { background: var(--accent); border-color: #fff; box-shadow: 0 0 10px rgba(59, 130, 246, 0.5); }
         .preview-tag { font-size: 10px; background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px; }
         .record-ui { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; display: none; gap: 12px; background: var(--panel); padding: 12px 28px; border-radius: 50px; border: 1px solid #3b82f6; }
-        .ctrl-btn { border: none; padding: 10px 22px; border-radius: 20px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+        .ctrl-btn { border: none; padding: 10px 22px; border-radius: 20px; cursor: pointer; font-weight: bold; }
         #playBtn { background: #10b981; color: white; }
         #recBtn { background: #ef4444; color: white; }
         input { width: 100%; padding: 12px; margin-bottom: 10px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: #fff; box-sizing: border-box; }
@@ -27,14 +27,14 @@
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="margin:0;">🎭 慢速展演版 (極致流暢)</h2>
-        <div class="section-title">1. MIDI 軌道 (點擊切換試聽)</div>
+        <h2 style="margin:0;">🕯️ 極致慢速展演</h2>
+        <div class="section-title">1. MIDI 軌道 (點擊試聽)</div>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleMidiUpload(this)">
-        <div id="trackContainer" class="track-list">讀取音樂中...</div>
+        <div id="trackContainer" class="track-list">載入中...</div>
         <div class="section-title">2. 照片廊道 (多選)</div>
         <input type="file" id="galleryFiles" multiple accept="image/*">
         <div class="section-title">3. 結束留言</div>
-        <input type="text" id="msgInit" value="A Timeless Performance. 終">
+        <input type="text" id="msgInit" value="A Serene Masterpiece. 終">
         <button id="entryBtn" class="btn" onclick="enterScene()" disabled>確認並進入</button>
     </div>
 </div>
@@ -47,13 +47,13 @@
 <canvas id="stage"></canvas>
 
 <script>
-// 物理參數再度乘以 0.8 (累計 VX 3.37, TS 207)
+// 物理參數再度乘以 0.8 (累計 VX 2.70, TS 166)
 const CONFIG = { 
-    GRAVITY: 0.8,        // 降低重力感，適合慢速移動
-    BALL_VX: 3.37,       
-    BOUNCE_UP: -0.5, 
+    GRAVITY: 0.6,        // 極低重力以配合極慢速
+    BALL_VX: 2.70,       
+    BOUNCE_UP: -0.45, 
     STEP_Y_GAP: 15, 
-    TIME_SCALE: 207,     
+    TIME_SCALE: 166,     
     BALL_R: 10 
 };
 
@@ -91,7 +91,7 @@ function parseMidi(buf) {
         if(t.notes.length < 2) return;
         const item = document.createElement('div');
         item.className = "track-item";
-        item.innerHTML = `<span>軌道 ${i+1} (${t.notes.length} 音符)</span><span class="preview-tag">試聽</span>`;
+        item.innerHTML = `<span>軌道 ${i+1} (${t.notes.length})</span><span class="preview-tag">試聽</span>`;
         item.onclick = async () => {
             await ensureAudioStarted();
             stopAllPreviews();
@@ -192,7 +192,7 @@ function startRecording() {
     recorder.onstop = () => {
         const blob = new Blob(chunks, { type: 'video/webm' });
         const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-        a.download = `music_show_${Date.now()}.webm`; a.click();
+        a.download = `serene_show_${Date.now()}.webm`; a.click();
         setTimeout(() => location.reload(), 1000);
     };
     recorder.start(100);
@@ -213,7 +213,7 @@ function update() {
             const g = audioCtx.createGain();
             osc.type = 'triangle'; osc.frequency.setValueAtTime(s.freq, audioCtx.currentTime);
             g.gain.setTargetAtTime(0.3, audioCtx.currentTime, 0.01);
-            g.gain.setTargetAtTime(0, audioCtx.currentTime + 0.12, 0.1);
+            g.gain.setTargetAtTime(0, audioCtx.currentTime + 0.15, 0.1);
             osc.connect(g); g.connect(audioCtx.destination); g.connect(audioDest);
             osc.start(); osc.stop(audioCtx.currentTime + 0.6);
             s.active = 1; s.flash = 1.0;
