@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>木琴工坊 - 錄影強化版</title>
+    <title>木琴工坊 - 廣角視野版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --success: #10b981; }
@@ -31,13 +31,13 @@
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="text-align:center; margin: 0 0 20px 0;">🎬 完美 Ending 錄製</h2>
+        <h2 style="text-align:center; margin: 0 0 20px 0;">🎬 廣角視野模式</h2>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleManualMidi(this)">
         <div id="trackContainer" class="track-list">讀取 MIDI 中...</div>
         <input type="file" id="galleryFiles" multiple accept="image/*" onchange="previewImages(this)">
         <div id="photoPreview"></div>
-        <input type="text" id="msgInit" value="Fantastic Music!">
-        <button id="entryBtn" class="primary-btn" onclick="enterScene()" disabled>進入場景</button>
+        <input type="text" id="msgInit" value="Wide Vision Harmony!">
+        <button id="entryBtn" class="primary-btn" onclick="enterScene()" disabled>進入廣角場景</button>
     </div>
 </div>
 
@@ -54,7 +54,7 @@ const ctx = canvas.getContext('2d', { alpha: false });
 let audioCtx, tracks = [], isRunning = false, isBallMoving = false, gallery = [], stars = [];
 let camX = 0, camY = 0, recorder, chunks = [], audioDest, selectedTrackData = null;
 let isFinishing = false, isRecording = false, isSaving = false, currentMsg = "";
-let lastTime = 0, isInitialSlide = true;
+let isInitialSlide = true;
 
 const cornerImg = new Image(); cornerImg.src = 'IMG_6604.png';
 const GRAVITY = 3600, BALL_VX = 400, BOUNCE_UP = -40, BALL_R = 12;
@@ -64,7 +64,7 @@ canvas.width = window.innerWidth; canvas.height = window.innerHeight;
 
 function initStars() {
     stars = [];
-    for(let i=0; i<100; i++) stars.push({ x: Math.random()*canvas.width, y: Math.random()*canvas.height, size: Math.random()*1.5, opacity: Math.random(), parallax: 0.1 });
+    for(let i=0; i<120; i++) stars.push({ x: Math.random()*canvas.width, y: Math.random()*canvas.height, size: Math.random()*1.2, opacity: Math.random(), parallax: 0.08 });
 }
 
 window.addEventListener('load', async () => {
@@ -112,8 +112,9 @@ async function enterScene() {
         const img = new Image(); img.src = URL.createObjectURL(gFiles[i]);
         await new Promise(r => img.onload = r);
         const s = tracks[0].steps[Math.floor((i/gFiles.length)*tracks[0].steps.length)];
-        const dispW = 280; const dispH = dispW * (img.height / img.width);
-        gallery.push({ img, x: s.x + 80, y: s.y - dispH - 30, w: dispW, h: dispH });
+        // 配合廣角，圖片稍微加大一點點
+        const dispW = 320; const dispH = dispW * (img.height / img.width);
+        gallery.push({ img, x: s.x + 120, y: s.y - dispH - 50, w: dispW, h: dispH });
     }
     document.getElementById('setupPanel').style.display = 'none';
     document.getElementById('recordUI').style.display = 'flex';
@@ -156,9 +157,10 @@ function loop() {
                     }
                 }
                 const lastStep = t.steps[t.steps.length - 1];
-                if (b.x > lastStep.x + lastStep.w && b.y > lastStep.y + 350) triggerEndSequence();
+                if (b.x > lastStep.x + lastStep.w && b.y > lastStep.y + 400) triggerEndSequence();
             }
-            camX += (b.x - canvas.width * 0.25 - camX) * 0.1;
+            // 💡 廣角攝影機調整：球在畫面的 20% 處，給右邊留 80% 視野
+            camX += (b.x - canvas.width * 0.20 - camX) * 0.1;
             camY += (b.y - canvas.height * 0.55 - camY) * 0.1;
         }
         draw();
@@ -185,18 +187,25 @@ function draw() {
         ctx.fillStyle = `rgba(255,255,255,${s.opacity})`;
         ctx.beginPath(); ctx.arc(x, y, s.size, 0, Math.PI*2); ctx.fill();
     });
+    
     ctx.save();
-    ctx.translate(canvas.width/2, canvas.height/2); ctx.scale(0.85, 0.85); ctx.translate(-canvas.width/2, -canvas.height/2);
+    // 💡 廣角核心：將整個舞台縮放至 0.65，讓視線變得非常遠
+    ctx.translate(canvas.width/2, canvas.height/2); 
+    ctx.scale(0.65, 0.65); 
+    ctx.translate(-canvas.width/2, -canvas.height/2);
+    
     ctx.translate(-Math.round(camX), -Math.round(camY));
+    
     gallery.forEach(p => {
-        if(p.x - camX < canvas.width + 300 && p.x - camX > -500) {
+        if(p.x - camX < canvas.width + 500 && p.x - camX > -800) {
             ctx.fillStyle = "rgba(255,255,255,0.1)"; ctx.fillRect(p.x - 4, p.y - 4, p.w + 8, p.h + 8);
             ctx.drawImage(p.img, p.x, p.y, p.w, p.h);
         }
     });
+    
     if (tracks[0]) {
         tracks[0].steps.forEach(s => {
-            if(s.x - camX < canvas.width + 200 && s.x - camX > -s.w - 200) {
+            if(s.x - camX < canvas.width + 400 && s.x - camX > -s.w - 400) {
                 ctx.fillStyle = s.active ? "#fff" : s.color + "99";
                 ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, 18, 9); ctx.fill();
             }
@@ -206,6 +215,7 @@ function draw() {
         }
     }
     ctx.restore();
+
     if (isFinishing) {
         ctx.fillStyle = "rgba(0,0,0,0.96)"; ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.fillStyle = "#fff"; ctx.font = "bold 36px sans-serif"; ctx.textAlign = "center";
@@ -222,7 +232,7 @@ function handleRecording() {
         chunks = [];
         const stream = canvas.captureStream(30);
         const combined = new MediaStream([...stream.getTracks(), ...audioDest.stream.getTracks()]);
-        recorder = new MediaRecorder(combined, { mimeType: 'video/webm;codecs=vp8', videoBitsPerSecond: 4000000 });
+        recorder = new MediaRecorder(combined, { mimeType: 'video/webm;codecs=vp8', videoBitsPerSecond: 5000000 });
         recorder.ondataavailable = e => { if(e.data.size > 0) chunks.push(e.data); };
         recorder.onstop = saveVideo;
         recorder.start(1000); 
@@ -245,14 +255,13 @@ function triggerEndSequence() {
     recBtn.classList.remove('is-recording');
     recBtn.classList.add('is-saving');
 
-    // 💡 關鍵保險：每 500ms 強制刷新一次數據，連刷 8 次 (4秒)
     let flushCount = 0;
     const flusher = setInterval(() => {
         if (recorder && recorder.state === 'recording') {
-            recorder.requestData(); // 強迫瀏覽器把目前的留言板畫面「推」進緩衝區
+            recorder.requestData(); 
         }
         flushCount++;
-        if (flushCount >= 8) {
+        if (flushCount >= 10) { // 延長至 5 秒
             clearInterval(flusher);
             if (recorder && recorder.state !== 'inactive') recorder.stop();
         }
@@ -262,7 +271,7 @@ function triggerEndSequence() {
 function saveVideo() {
     const blob = new Blob(chunks, { type: 'video/webm' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = `mario_app_fix_${Date.now()}.webm`; a.click();
+    a.download = `mario_wide_end_${Date.now()}.webm`; a.click();
     setTimeout(() => location.reload(), 2000);
 }
 </script>
