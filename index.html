@@ -1,83 +1,361 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <title>名侦探柯南 - 主旋律提取播放器</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/abcjs/6.2.2/abcjs-basic-min.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>𓃥白六木琴工坊 - 深色操作版</title>
+    <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 30px; background: #1a1a1a; color: #eee; }
-        .container { max-width: 900px; margin: auto; background: #2d2d2d; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
-        .controls { display: flex; gap: 15px; margin: 20px 0; padding: 15px; background: #3d3d3d; border-radius: 8px; }
-        button { padding: 12px 24px; cursor: pointer; border: none; border-radius: 6px; font-weight: bold; transition: 0.3s; }
-        .btn-main { background: #e41e26; color: white; }
-        .btn-melody { background: #2196F3; color: white; }
-        #paper { background: white; margin-top: 20px; border-radius: 8px; overflow: hidden; }
-        .info-panel { border-left: 4px solid #e41e26; padding-left: 15px; margin-bottom: 20px; }
+        :root { --accent: #3b82f6; --danger: #ef4444; --success: #10b981; }
+        body { margin: 0; background: #010409; color: #fff; font-family: -apple-system, sans-serif; overflow: hidden; touch-action: none; }
+        
+        /* 初始設置面板 */
+        #setupPanel { position: fixed; inset: 0; background: #020617; z-index: 9999; padding: 20px; display: flex; flex-direction: column; align-items: center; overflow-y: auto; }
+        .config-card { background: rgba(15, 23, 42, 0.98); padding: 25px; border-radius: 24px; border: 1px solid #334155; width: 90%; max-width: 420px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
+        .input-group { margin-bottom: 20px; }
+        .input-group label { display: block; margin-bottom: 8px; font-size: 14px; color: #94a3b8; font-weight: bold; }
+        
+        select, input[type="file"], input[type="text"] { 
+            width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #334155; 
+            background: #0f172a; color: #fff; box-sizing: border-box; font-size: 14px;
+        }
+        select { cursor: pointer; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='white'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; background-size: 16px; }
+
+        /* 播放畫面專用操作面板 */
+        #uiPanel { position: fixed; bottom: 30px; right: 20px; z-index: 10000; display: none; flex-direction: column; align-items: flex-end; }
+        .panel-content { 
+            background: rgba(10, 15, 25, 0.95); padding: 12px; border-radius: 20px; border: 1px solid #334155; 
+            display: flex; gap: 10px; backdrop-filter: blur(20px);
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        #uiPanel.collapsed .panel-content { opacity: 0; transform: scale(0.6) translateY(40px); pointer-events: none; }
+        
+        .toggle-btn { width: 56px; height: 56px; border-radius: 50%; background: #0f172a; border: 2px solid #334155; color: white; font-size: 24px; cursor: pointer; display: flex; align-items: center; justify-content: center; margin-top: 10px; }
+        
+        /* 修改按鈕為深色調 */
+        .action-btn { padding: 12px 18px; border-radius: 12px; border: 1px solid #475569; font-weight: bold; color: #e2e8f0; cursor: pointer; font-size: 14px; background: #1e293b; transition: background 0.2s; }
+        .action-btn:hover { background: #334155; }
+        #startBtn { background: #064e3b; border-color: #065f46; color: #6ee7b7; } /* 深綠 */
+        #startBtn:hover { background: #065f46; }
+        
+        .primary-btn { width: 100%; padding: 16px; border-radius: 14px; background: var(--accent); color: white; border: none; font-weight: bold; cursor: pointer; font-size: 16px; }
+        #photoPreview { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 10px; }
+        .photo-thumb { aspect-ratio: 1; background: #1e293b; border-radius: 6px; overflow: hidden; }
+        .status-msg { font-size: 12px; margin-top: 5px; color: var(--success); }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <div class="info-panel">
-        <h2>名侦探柯南主题曲：主旋律识别</h2>
-        [span_1](start_span)<p>乐谱特征：F 小调[span_1](end_span)[span_2](start_span)[span_3](start_span)，主旋律由高音谱号（V:1）承载[span_2](end_span)[span_3](end_span)。</p>
-    </div>
-    
-    <div class="controls">
-        <button class="btn-main" onclick="playFull()">播放全曲 (Piano Duo)</button>
-        <button class="btn-melody" onclick="playMelodyOnly()">只听主旋律 (Solo Track)</button>
-    </div>
+<div id="setupPanel">
+    <div class="config-card">
+        <h2 style="text-align:center; margin-top:0; color:var(--accent);">🎹 𓃥白六木琴工坊</h2>
+        
+        <div class="input-group">
+            <label>1. 選擇預設曲目 (需檔案在同目錄)</label>
+            <select id="midiSelect" onchange="changeDefaultMidi(this.value)">
+                <option value="b3501.mid">b3501.mid (預設)</option>
+                <option value="kaze.mid">kaze.mid</option>
+                <option value="Mario Bros. - Super Mario Bros. Theme.mid">Super Mario Bros. Theme</option>
+                <option value="custom" disabled>--- 或手動上傳下方檔案 ---</option>
+            </select>
+        </div>
 
-    <div id="audio-control"></div>
-    <div id="paper"></div>
+        <div class="input-group">
+            <label>或者：上傳自訂 MIDI</label>
+            <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleManualUpload(this)">
+            <div id="midiStatus" class="status-msg">已載入：b3501.mid</div>
+        </div>
+
+        <div class="input-group">
+            <label>2. 上傳多張背景照片 (可多選)</label>
+            <input type="file" id="galleryFiles" multiple accept="image/*" onchange="previewImages(this)">
+            <div id="photoPreview"></div>
+        </div>
+
+        <div class="input-group">
+            <label>3. 結束畫面訊息</label>
+            <input type="text" id="msgInit" value="演出結束，感謝欣賞">
+        </div>
+
+        <button id="entryBtn" class="primary-btn" onclick="enterScene()">進入播放場景</button>
+    </div>
 </div>
 
+<div id="uiPanel">
+    <div class="panel-content">
+        <button id="startBtn" class="action-btn" onclick="startApp()">開始播放</button>
+        <button id="pauseBtn" class="action-btn" onclick="togglePause()">暫停</button>
+        <button id="resetBtn" class="action-btn" onclick="location.reload()">重新設定</button>
+    </div>
+    <button class="toggle-btn" onclick="document.getElementById('uiPanel').classList.toggle('collapsed')">⚙️</button>
+</div>
+
+<canvas id="stage"></canvas>
+
 <script>
-[span_4](start_span)// 核心 ABC 代码：区分 V:1 (旋律) 和 V:2 (伴奏)[span_4](end_span)
-const fullScore = `
-X:1
-T:名侦探柯南主题曲 (Snippet)
-M:4/4
-L:1/8
-Q:1/4=132
-K:Ab
-V:1 name="Main Melody"
-%%MIDI program 65
-| z4 F G | (AG) F G A F c A | (F G) (A G) (F E) D C | B, C D E F4 |
-| c2 c2 B2 A2 | G2 G2 F2 G2 | A2 F4 A2 | B2 G4 B2 |
-V:2 name="Bass Accomp"
-%%MIDI program 0
-| F,,2 F,2 C,2 F,2 | E,,2 E,2 B,,2 E,2 | D,,2 D,2 A,,2 D,2 | C,,2 C,2 G,,2 C,2 |
-| F,,2 F,2 C,2 F,2 | E,,2 E,2 B,,2 E,2 | D,,2 D,2 A,,2 D,2 | C,,2 C,2 G,,2 C,2 |
-`;
+const canvas = document.getElementById('stage');
+const ctx = canvas.getContext('2d', { alpha: false });
+let audioCtx, tracks = [], isRunning = false, isBallMoving = false, isPaused = false, gallery = [], stars = [];
+let camX = 0, camY = 0, midiData = null, currentMsg = "";
+const cornerImg = new Image(); cornerImg.src = 'IMG_6604.png';
 
-let visualObj;
-const synthControl = new ABCJS.synth.SynthController();
+// 保持你要求的重力設定
+const GRAVITY = 5200;
+const BALL_VX = 400;    
+const BOUNCE_UP = -22;  
+const BALL_R = 12;
 
-function initPlayer(abcString) {
-    visualObj = ABCJS.renderAbc("paper", abcString, { responsive: "resize" })[0];
-    if (ABCJS.synth.supportsAudio()) {
-        synthControl.load("#audio-control", null, { displayPlay: true, displayProgress: true });
-        const midi = new ABCJS.synth.CreateSynth();
-        midi.init({ visualObj: visualObj }).then(() => {
-            synthControl.setTune(visualObj, false);
+function getNoteColor(midi) {
+    const hue = (midi % 12) * 30;
+    return `hsla(${hue}, 80%, 65%, 0.85)`;
+}
+
+async function loadServerMidi(filename) {
+    try {
+        const response = await fetch(filename);
+        if (response.ok) {
+            const buf = await response.arrayBuffer();
+            midiData = new Midi(buf);
+            document.getElementById('midiStatus').innerText = `✅ 已載入檔案: ${filename}`;
+        } else {
+            document.getElementById('midiStatus').innerText = `⚠️ 找不到 ${filename}`;
+        }
+    } catch (e) {
+        document.getElementById('midiStatus').innerText = "⚠️ 載入失敗";
+    }
+}
+
+loadServerMidi('b3501.mid');
+
+function changeDefaultMidi(val) {
+    if(val !== "custom") loadServerMidi(val);
+}
+
+function handleManualUpload(input) {
+    if(input.files[0]) {
+        const file = input.files[0];
+        file.arrayBuffer().then(buf => {
+            midiData = new Midi(buf);
+            document.getElementById('midiStatus').innerText = "✅ 已上傳檔案: " + file.name;
+            const select = document.getElementById('midiSelect');
+            const customOpt = select.querySelector('option[value="custom"]');
+            customOpt.innerText = "自訂：" + file.name;
+            customOpt.disabled = false;
+            select.value = "custom";
         });
     }
 }
 
-function playFull() {
-    initPlayer(fullScore);
+function previewImages(input) {
+    const container = document.getElementById('photoPreview'); container.innerHTML = "";
+    Array.from(input.files).slice(0, 30).forEach(file => {
+        const div = document.createElement('div'); div.className = 'photo-thumb';
+        const img = document.createElement('img'); img.src = URL.createObjectURL(file);
+        img.style.width="100%"; img.style.height="100%"; img.style.objectFit="cover";
+        div.appendChild(img); container.appendChild(div);
+    });
 }
 
-function playMelodyOnly() {
-    // 逻辑：通过正则过滤掉 V:2 及其后的所有伴奏内容，从而提取主旋律
-    const melodyOnly = fullScore.split('V:2')[0];
-    initPlayer(melodyOnly);
+async function enterScene() {
+    if(!midiData) { alert("尚未準備好 MIDI 資料"); return; }
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    currentMsg = document.getElementById('msgInit').value;
+    
+    tracks = []; gallery = [];
+    
+    const sorted = [...midiData.tracks].sort((a,b) => b.notes.length - a.notes.length).slice(0, 3);
+    let globalStartTime = Math.min(...sorted.map(t => t.notes[0]?.time || 0));
+    let globalEndTime = Math.max(...sorted.map(t => t.notes[t.notes.length-1].time + t.notes[t.notes.length-1].duration));
+
+    sorted.forEach((track, idx) => {
+        const steps = [];
+        const baseOffset = idx * 220;
+        let rawNotes = track.notes.sort((a,b) => a.time - b.time);
+        let finalPathNotes = [];
+        
+        for (let i = 0; i < rawNotes.length; i++) {
+            let current = rawNotes[i];
+            let isOverlappedByShorter = false;
+            for (let j = 0; j < rawNotes.length; j++) {
+                if (i === j) continue;
+                let other = rawNotes[j];
+                if (other.time >= current.time && other.time < (current.time + current.duration) && other.duration < current.duration) {
+                    isOverlappedByShorter = true; break;
+                }
+            }
+            if (!isOverlappedByShorter) {
+                if (finalPathNotes.length > 0) {
+                    let last = finalPathNotes[finalPathNotes.length-1];
+                    if (Math.abs(current.time - last.time) < 0.04) {
+                        if (current.duration < last.duration) finalPathNotes[finalPathNotes.length-1] = current;
+                        continue;
+                    }
+                }
+                finalPathNotes.push(current);
+            }
+        }
+
+        let startX = globalStartTime * BALL_VX;
+        let startY = (canvas.height * 0.3 + baseOffset);
+        steps.push({ x: startX, y: startY, w: (finalPathNotes[0].time - globalStartTime) * BALL_VX + 10, isNote: false, active: 0, color: '#1e293b' });
+
+        finalPathNotes.forEach((n, i) => {
+            let x = n.time * BALL_VX;
+            let y = startY + (i * 18);
+            let w = Math.max(n.duration * BALL_VX, 50);
+            let prev = steps[steps.length-1];
+            if (x < prev.x + 2) x = prev.x + 2;
+            let gap = x - (prev.x + prev.w);
+            if (gap > 0) prev.w += gap + 5;
+            steps.push({ x, y, w, freq: 440*Math.pow(2,(n.midi-69)/12), isNote: true, active: 0, color: getNoteColor(n.midi) });
+        });
+
+        let lastStep = steps[steps.length-1];
+        let finalTargetX = globalEndTime * BALL_VX + 200;
+        if (lastStep.x + lastStep.w < finalTargetX) {
+            steps.push({ x: lastStep.x + lastStep.w, y: lastStep.y, w: finalTargetX - (lastStep.x + lastStep.w), isNote: false, active: 0, color: '#1e293b' });
+        }
+        
+        tracks.push({ 
+            steps, 
+            ball: { 
+                x: startX + 5, y: steps[0].y - BALL_R, vx: BALL_VX, vy: 0, 
+                color: idx === 0 ? '#ff4757' : (idx===1?'#54a0ff':'#2ed573'),
+                tails: []
+            }, 
+            cur: 0 
+        });
+    });
+
+    const gFiles = document.getElementById('galleryFiles').files;
+    const redTrack = tracks[0];
+    for (let i = 0; i < gFiles.length; i++) {
+        const img = new Image(); img.src = URL.createObjectURL(gFiles[i]);
+        await new Promise(r => img.onload = r);
+        const stepIdx = Math.floor((i / (gFiles.length || 1)) * redTrack.steps.length);
+        gallery.push({ img, x: redTrack.steps[stepIdx].x, y: redTrack.steps[stepIdx].y + ((i%2===0?-1:1) * 180) - 100, w: 160, h: 160 * (img.height/img.width), rot: (Math.random()-0.5)*0.2 });
+    }
+
+    document.getElementById('setupPanel').style.display = 'none';
+    document.getElementById('uiPanel').style.display = 'flex'; 
+    camX = tracks[0].ball.x - 150; camY = tracks[0].ball.y - 300;
+    initStars();
+    isRunning = true; requestAnimationFrame(loop);
 }
 
-// 默认加载全曲
-window.onload = playFull;
+function startApp() {
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    isBallMoving = true;
+    isPaused = false;
+    document.getElementById('startBtn').innerText = "播放中";
+    document.getElementById('uiPanel').classList.add('collapsed');
+}
+
+function togglePause() {
+    isPaused = !isPaused;
+    document.getElementById('pauseBtn').innerText = isPaused ? "繼續" : "暫停";
+}
+
+function loop() {
+    if (!isRunning) return;
+    const dt = 1/60;
+    if (isBallMoving && !isPaused) {
+        tracks.forEach(t => {
+            const b = t.ball; let prevY = b.y;
+            b.vy += GRAVITY * dt; b.x += b.vx * dt; b.y += b.vy * dt;
+            let onNoteStep = false;
+            for (let i = t.cur; i < Math.min(t.cur + 15, t.steps.length); i++) {
+                let s = t.steps[i];
+                if (b.x >= s.x && b.x <= s.x + s.w && prevY + BALL_R <= s.y + 15 && b.y + BALL_R >= s.y) {
+                    b.y = s.y - BALL_R; b.vy = BOUNCE_UP; t.cur = i;
+                    if(!s.active && s.isNote) hitStep(s);
+                    if(s.isNote) onNoteStep = true;
+                    break;
+                }
+            }
+            if (!onNoteStep) b.tails.push({ x: b.x, y: b.y, r: BALL_R, opacity: 1 });
+            b.tails.forEach(p => { p.opacity -= 0.05; p.r *= 0.94; });
+            b.tails = b.tails.filter(p => p.opacity > 0);
+            if (b.x > t.steps[t.steps.length-1].x + t.steps[t.steps.length-1].w - 10) { b.vx = 0; b.vy = 0; }
+        });
+        const mb = tracks[0].ball;
+        camX += (mb.x - canvas.width * 0.22 - camX) * 0.1;
+        camY += (mb.y - canvas.height * 0.45 - camY) * 0.05;
+        if (tracks.every(t => t.ball.vx === 0)) isBallMoving = false;
+    }
+    draw();
+    requestAnimationFrame(loop);
+}
+
+function hitStep(s) {
+    if (s.active) return;
+    const osc = audioCtx.createOscillator(); const g = audioCtx.createGain();
+    osc.type = 'triangle'; osc.frequency.setValueAtTime(s.freq, audioCtx.currentTime);
+    g.gain.setValueAtTime(0.12, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
+    osc.connect(g); g.connect(audioCtx.destination);
+    osc.start(); osc.stop(audioCtx.currentTime + 0.3);
+    s.active = 1;
+}
+
+function initStars() {
+    stars = [];
+    for(let i=0; i<80; i++) stars.push({ x: Math.random()*canvas.width, y: Math.random()*canvas.height, size: Math.random()*1.2, opacity: Math.random() });
+}
+
+function draw() {
+    ctx.fillStyle = "#010409"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    stars.forEach(s => {
+        let x = (s.x - camX * 0.04) % canvas.width; if(x<0) x+=canvas.width;
+        let y = (s.y - camY * 0.04) % canvas.height; if(y<0) y+=canvas.height;
+        ctx.fillStyle = `rgba(255,255,255,${s.opacity})`;
+        ctx.beginPath(); ctx.arc(x, y, s.size, 0, Math.PI*2); ctx.fill();
+    });
+    ctx.save();
+    ctx.translate(canvas.width/2, canvas.height/2); ctx.scale(0.5, 0.5); 
+    ctx.translate(-canvas.width/2, -canvas.height/2); ctx.translate(-camX, -camY);
+
+    gallery.forEach(p => {
+        const dist = Math.abs(p.x - camX);
+        if(dist < 1800) {
+            ctx.save(); ctx.translate(p.x + p.w/2, p.y + p.h/2); ctx.rotate(p.rot);
+            ctx.globalAlpha = Math.max(0, 1 - dist/1500);
+            ctx.fillStyle = "#fff"; ctx.fillRect(-p.w/2-6, -p.h/2-6, p.w+12, p.h+12);
+            ctx.drawImage(p.img, -p.w/2, -p.h/2, p.w, p.h);
+            ctx.restore();
+        }
+    });
+
+    tracks.forEach(t => {
+        t.steps.forEach(s => {
+            if(Math.abs(s.x - camX) < 1400) {
+                ctx.fillStyle = s.active ? "#ffffff" : s.color;
+                if(s.active) { ctx.shadowBlur = 15; ctx.shadowColor = "#fff"; }
+                ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, 18, 9); ctx.fill();
+                ctx.shadowBlur = 0;
+            }
+        });
+        const b = t.ball;
+        b.tails.forEach(p => {
+            ctx.fillStyle = b.color; ctx.globalAlpha = p.opacity * 0.5;
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
+        });
+        ctx.globalAlpha = 1.0; ctx.fillStyle = b.color;
+        ctx.shadowBlur = 10; ctx.shadowColor = b.color;
+        ctx.beginPath(); ctx.arc(b.x, b.y, BALL_R, 0, Math.PI*2); ctx.fill();
+        ctx.shadowBlur = 0;
+    });
+    ctx.restore();
+
+    if (!isBallMoving && camX > 500) {
+        ctx.fillStyle = "rgba(0,0,0,0.85)"; ctx.fillRect(0,0,canvas.width,canvas.height);
+        ctx.fillStyle = "#fff"; ctx.font = "bold 32px sans-serif"; ctx.textAlign = "center";
+        ctx.fillText(currentMsg, canvas.width/2, canvas.height/2);
+        if(cornerImg.complete) ctx.drawImage(cornerImg, canvas.width-150, canvas.height-170, 110, 110);
+    }
+}
+canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; });
 </script>
-
 </body>
 </html>
