@@ -9,12 +9,11 @@
         :root { --accent: #94a3b8; --brand-gold: #e2e8f0; --bg-dark: #010409; }
         body { margin: 0; background: var(--bg-dark); color: #fff; font-family: "PingFang TC", "Microsoft JhengHei", sans-serif; overflow: hidden; touch-action: none; }
         
-        /* 𓃥 啟動面板 */
         #setupPanel { position: fixed; inset: 0; background: radial-gradient(circle at center, #0f172a 0%, #020617 100%); z-index: 5000; padding: 20px; display: flex; flex-direction: column; align-items: center; overflow-y: auto; }
         .config-card { background: rgba(30, 41, 59, 0.75); padding: 30px; border-radius: 28px; border: 1px solid rgba(255,255,255,0.1); width: 90%; max-width: 440px; backdrop-filter: blur(25px); box-shadow: 0 25px 60px rgba(0,0,0,0.6); }
-        h2.brand { font-size: 26px; text-align: center; margin-bottom: 25px; color: var(--brand-gold); letter-spacing: 4px; font-weight: 300; }
+        h2.brand { font-size: 26px; text-align: center; margin-bottom: 10px; color: var(--brand-gold); letter-spacing: 4px; font-weight: 300; }
+        #statusInfo { font-size: 12px; color: #10b981; text-align: center; margin-bottom: 20px; min-height: 1.2em; }
         
-        /* 介面收合 */
         #uiPanel { position: fixed; bottom: 30px; right: 20px; z-index: 1000; transition: 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
         .panel-content { background: rgba(15, 23, 42, 0.8); padding: 12px; border-radius: 24px; border: 1px solid rgba(255,255,255,0.15); display: flex; gap: 12px; backdrop-filter: blur(15px); }
         #uiPanel.collapsed { opacity: 0; transform: scale(0.8) translateY(40px); pointer-events: none; }
@@ -36,14 +35,15 @@
 <div id="setupPanel">
     <div class="config-card">
         <h2 class="brand">𓃥 白六木琴工坊</h2>
+        <div id="statusInfo">準備中...</div>
         
-        <label>MIDI 演奏曲 (預設：酒後的心聲)</label>
+        <label>自訂 MIDI (不選擇則使用預設曲)</label>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleMidi(this)">
         
         <label>背景顯示曲名</label>
-        <input type="text" id="songTitle" placeholder="酒後的心聲" value="酒後的心聲">
+        <input type="text" id="songTitle" value="酒後的心聲">
         
-        <label>回憶長廊照片</label>
+        <label>回憶長廊照片 (選填)</label>
         <input type="file" id="galleryFiles" multiple accept="image/*" onchange="previewImages(this)">
         <div id="photoPreview"></div>
         
@@ -70,15 +70,19 @@ const cornerImg = new Image(); cornerImg.src = 'IMG_6604.png';
 
 const GRAVITY = 3200, BALL_VX = 400, BOUNCE_UP = -22, BALL_R = 12;
 
-// 預載入預設曲目 (酒後的心聲.MID)
+// --- 自動加載預設曲目邏輯 ---
 async function loadDefaultMidi() {
+    const status = document.getElementById('statusInfo');
     try {
         const response = await fetch('b3501.mid');
+        if(!response.ok) throw new Error("File not found");
         const buf = await response.arrayBuffer();
         midiData = new Midi(buf);
-        console.log("預設曲目：酒後的心聲 已就緒");
+        status.innerText = "✓ 已偵測到預設曲：酒後的心聲";
+        status.style.color = "#10b981";
     } catch (e) {
-        console.log("等待用戶手動上傳曲目...");
+        status.innerText = "未偵測到預設曲，請手動上傳 MIDI";
+        status.style.color = "#94a3b8";
     }
 }
 loadDefaultMidi();
@@ -96,7 +100,8 @@ function handleMidi(input) {
         document.getElementById('songTitle').value = file.name.replace(/\.[^/.]+$/, "");
         file.arrayBuffer().then(buf => {
             midiData = new Midi(buf);
-            document.getElementById('entryBtn').disabled = false;
+            document.getElementById('statusInfo').innerText = "✓ 已切換至手動上傳曲目";
+            document.getElementById('statusInfo').style.color = "#3b82f6";
         });
     }
 }
@@ -112,11 +117,12 @@ function previewImages(input) {
 }
 
 async function enterScene() {
-    if(!midiData) { alert("請先選擇或等待 MIDI 檔案加載"); return; }
+    if(!midiData) { alert("請先上傳 MIDI 檔案或確認 b3501.mid 存在於根目錄"); return; }
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     currentMsg = document.getElementById('msgInit').value;
     displayTitle = document.getElementById('songTitle').value || "𓃥";
     
+    // 獲取主旋律軌道
     const sorted = [...midiData.tracks].sort((a,b) => b.notes.length - a.notes.length).slice(0, 3);
     let globalStartTime = Math.min(...sorted.map(t => t.notes[0]?.time || 0));
     let globalEndTime = Math.max(...sorted.map(t => t.notes[t.notes.length-1].time + t.notes[t.notes.length-1].duration));
@@ -127,7 +133,6 @@ async function enterScene() {
         let rawNotes = track.notes.sort((a,b) => a.time - b.time);
         let finalPathNotes = [];
         
-        // --- 短音優先演算法 ---
         for (let i = 0; i < rawNotes.length; i++) {
             let cur = rawNotes[i], isOver = false;
             for (let j = 0; j < rawNotes.length; j++) {
@@ -170,6 +175,7 @@ async function enterScene() {
         tracks.push({ steps, ball: { x: startX + 5, y: steps[0].y - BALL_R, vx: BALL_VX, vy: 0, color: idx === 0 ? '#fb7185' : (idx===1?'#60a5fa':'#34d399'), tails: [] }, cur: 0 });
     });
 
+    // 處理照片
     const gFiles = document.getElementById('galleryFiles').files;
     for (let i = 0; i < gFiles.length; i++) {
         const img = new Image(); img.src = URL.createObjectURL(gFiles[i]);
@@ -215,11 +221,9 @@ function loop() {
                     break;
                 }
             }
-            // --- 彗星拖尾邏輯 ---
             if(!onNote) b.tails.push({ x: b.x, y: b.y, r: BALL_R, opacity: 1 });
             b.tails.forEach(p => { p.opacity -= 0.04; p.r *= 0.95; });
             b.tails = b.tails.filter(p => p.opacity > 0);
-            
             if (b.x > t.steps[t.steps.length-1].x + t.steps[t.steps.length-1].w - 10) { b.vx = 0; b.vy = 0; }
         });
         const mb = tracks[0].ball;
@@ -253,18 +257,15 @@ function draw() {
         ctx.beginPath(); ctx.arc(x, y, s.size, 0, Math.PI*2); ctx.fill();
     });
 
-    // --- 𓃥 品牌視差曲名 ---
+    // 𓃥 品牌視差曲名 (巨型地標)
     ctx.save();
     ctx.font = "bold 150px sans-serif";
     ctx.textAlign = "center";
     const drift = Math.sin(Date.now()*0.0006) * 12;
     ctx.fillStyle = "rgba(255,255,255,0.04)";
     ctx.fillText(displayTitle, canvas.width/2 - (camX * 0.1), canvas.height/2 + 60 - (camY * 0.05) + drift);
-    ctx.fillStyle = "rgba(255,255,255,0.01)";
-    ctx.fillText(displayTitle, canvas.width/2 - (camX * 0.1), canvas.height/2 + 230 - (camY * 0.05) + drift);
     ctx.restore();
 
-    // 演奏場景
     ctx.save();
     ctx.translate(canvas.width/2, canvas.height/2);
     ctx.scale(0.5, 0.5); 
