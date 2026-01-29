@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>𓃥白六木琴工坊 - 記憶穩定版</title>
+    <title>𓃥白六木琴工坊 - 聲部輪替版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --danger: #ef4444; --success: #10b981; }
@@ -34,7 +34,7 @@
         .action-btn { padding: 10px 14px; border-radius: 12px; border: 1px solid #475569; font-weight: bold; color: #e2e8f0; cursor: pointer; font-size: 13px; background: #1e293b; transition: all 0.2s; }
         .action-btn:hover { background: #334155; }
         #startBtn { background: #064e3b; border-color: #065f46; color: #6ee7b7; }
-        #cycleBtn { background: #1e1b4b; border-color: #312e81; color: #c7d2fe; }
+        #cycleBtn { background: #1e1b4b; border-color: #312e81; color: #c7d2fe; } /* 深紫色按鈕 */
 
         .primary-btn { width: 100%; padding: 16px; border-radius: 14px; background: var(--accent); color: white; border: none; font-weight: bold; cursor: pointer; font-size: 16px; }
         #photoPreview { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 10px; }
@@ -79,7 +79,7 @@
         <button id="startBtn" class="action-btn" onclick="startApp()">開始播放</button>
         <button id="cycleBtn" class="action-btn" onclick="cycleTracks()">切換聲部</button>
         <button id="pauseBtn" class="action-btn" onclick="togglePause()">暫停</button>
-        <button id="resetBtn" class="action-btn" onclick="resetRecord()">重置紀錄</button>
+        <button id="resetBtn" class="action-btn" onclick="location.reload()">重新設定</button>
     </div>
     <button class="toggle-btn" onclick="document.getElementById('uiPanel').classList.toggle('collapsed')">⚙️</button>
 </div>
@@ -91,9 +91,7 @@ const canvas = document.getElementById('stage');
 const ctx = canvas.getContext('2d', { alpha: false });
 let audioCtx, tracks = [], isRunning = false, isBallMoving = false, isPaused = false, gallery = [], stars = [];
 let camX = 0, camY = 0, midiData = null, currentMsg = "";
-
-// 讀取上次紀錄的聲部偏移量
-let trackOffset = parseInt(localStorage.getItem('workshop_track_offset')) || 0;
+let trackOffset = 0; // 用於輪替聲部
 const cornerImg = new Image(); cornerImg.src = 'IMG_6604.png';
 
 const GRAVITY = 5200;
@@ -141,13 +139,12 @@ function previewImages(input) {
     });
 }
 
+// 核心初始化逻辑封裝，以便輪替時呼叫
 async function initPhysics() {
-    if (!midiData) return;
     tracks = [];
-    // 過濾掉空軌道並排序
-    const allTracksSorted = midiData.tracks.filter(t => t.notes.length > 0).sort((a,b) => b.notes.length - a.notes.length);
-    if (allTracksSorted.length === 0) return;
-
+    const allTracksSorted = [...midiData.tracks].sort((a,b) => b.notes.length - a.notes.length);
+    
+    // 根據 offset 選擇 3 個聲部，若超出長度則取模
     const selectedTracks = [];
     for(let i=0; i<3; i++) {
         let idx = (trackOffset + i) % allTracksSorted.length;
@@ -161,12 +158,35 @@ async function initPhysics() {
         const steps = [];
         const baseOffset = idx * 220;
         let rawNotes = track.notes.sort((a,b) => a.time - b.time);
+        let finalPathNotes = [];
         
+        for (let i = 0; i < rawNotes.length; i++) {
+            let current = rawNotes[i];
+            let isOverlapped = false;
+            for (let j = 0; j < rawNotes.length; j++) {
+                if (i === j) continue;
+                let other = rawNotes[j];
+                if (other.time >= current.time && other.time < (current.time + current.duration) && other.duration < current.duration) {
+                    isOverlapped = true; break;
+                }
+            }
+            if (!isOverlapped) {
+                if (finalPathNotes.length > 0) {
+                    let last = finalPathNotes[finalPathNotes.length-1];
+                    if (Math.abs(current.time - last.time) < 0.04) {
+                        if (current.duration < last.duration) finalPathNotes[finalPathNotes.length-1] = current;
+                        continue;
+                    }
+                }
+                finalPathNotes.push(current);
+            }
+        }
+
         let startX = globalStartTime * BALL_VX;
         let startY = (canvas.height * 0.3 + baseOffset);
-        steps.push({ x: startX, y: startY, w: (rawNotes[0].time - globalStartTime) * BALL_VX + 20 || 80, isNote: false, active: 0, color: '#1e293b' });
+        steps.push({ x: startX, y: startY, w: (finalPathNotes[0]?.time - globalStartTime) * BALL_VX + 10 || 50, isNote: false, active: 0, color: '#1e293b' });
 
-        rawNotes.forEach((n, i) => {
+        finalPathNotes.forEach((n, i) => {
             let x = n.time * BALL_VX;
             let y = startY + (i * 18);
             let w = Math.max(n.duration * BALL_VX, 50);
@@ -178,13 +198,15 @@ async function initPhysics() {
         });
 
         let lastStep = steps[steps.length-1];
-        let finalTargetX = globalEndTime * BALL_VX + 300;
-        steps.push({ x: lastStep.x + lastStep.w, y: lastStep.y, w: finalTargetX - (lastStep.x + lastStep.w), isNote: false, active: 0, color: '#1e293b' });
+        let finalTargetX = globalEndTime * BALL_VX + 200;
+        if (lastStep.x + lastStep.w < finalTargetX) {
+            steps.push({ x: lastStep.x + lastStep.w, y: lastStep.y, w: finalTargetX - (lastStep.x + lastStep.w), isNote: false, active: 0, color: '#1e293b' });
+        }
         
         tracks.push({ 
             steps, 
             ball: { 
-                x: startX + 5, y: steps[0].y - BALL_R - 30, vx: BALL_VX, vy: 0, 
+                x: startX + 5, y: steps[0].y - BALL_R, vx: BALL_VX, vy: 0, 
                 color: idx === 0 ? '#ff4757' : (idx===1?'#54a0ff':'#2ed573'),
                 tails: []
             }, 
@@ -199,18 +221,18 @@ async function enterScene() {
     if(!midiData) { alert("尚未準備好 MIDI 資料"); return; }
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     currentMsg = document.getElementById('msgInit').value;
+    
     await initPhysics();
 
+    // 處理照片位置
     const gFiles = document.getElementById('galleryFiles').files;
     gallery = [];
-    if(tracks.length > 0) {
-        const redTrack = tracks[0];
-        for (let i = 0; i < gFiles.length; i++) {
-            const img = new Image(); img.src = URL.createObjectURL(gFiles[i]);
-            await new Promise(r => img.onload = r);
-            const stepIdx = Math.floor((i / (gFiles.length || 1)) * redTrack.steps.length);
-            gallery.push({ img, x: redTrack.steps[stepIdx].x, y: redTrack.steps[stepIdx].y + ((i%2===0?-1:1) * 180) - 100, w: 160, h: 160 * (img.height/img.width), rot: (Math.random()-0.5)*0.2 });
-        }
+    const redTrack = tracks[0];
+    for (let i = 0; i < gFiles.length; i++) {
+        const img = new Image(); img.src = URL.createObjectURL(gFiles[i]);
+        await new Promise(r => img.onload = r);
+        const stepIdx = Math.floor((i / (gFiles.length || 1)) * redTrack.steps.length);
+        gallery.push({ img, x: redTrack.steps[stepIdx].x, y: redTrack.steps[stepIdx].y + ((i%2===0?-1:1) * 180) - 100, w: 160, h: 160 * (img.height/img.width), rot: (Math.random()-0.5)*0.2 });
     }
 
     document.getElementById('setupPanel').style.display = 'none';
@@ -226,19 +248,14 @@ function startApp() {
     document.getElementById('uiPanel').classList.add('collapsed');
 }
 
+// 輪替聲部功能
 async function cycleTracks() {
     trackOffset++;
-    localStorage.setItem('workshop_track_offset', trackOffset); // 儲存紀錄
     isBallMoving = false;
     document.getElementById('startBtn').innerText = "開始播放";
     await initPhysics();
     if (audioCtx.state === 'suspended') audioCtx.resume();
-    isBallMoving = true;
-}
-
-function resetRecord() {
-    localStorage.removeItem('workshop_track_offset');
-    location.reload();
+    isBallMoving = true; // 切換後自動開始
 }
 
 function togglePause() {
@@ -271,8 +288,7 @@ function loop() {
         const mb = tracks[0].ball;
         camX += (mb.x - canvas.width * 0.22 - camX) * 0.1;
         camY += (mb.y - canvas.height * 0.45 - camY) * 0.05;
-        // 增加位移判定，防止初始位置誤判為結束
-        if (tracks.every(t => t.ball.vx === 0) && mb.x > 500) isBallMoving = false;
+        if (tracks.every(t => t.ball.vx === 0)) isBallMoving = false;
     }
     draw();
     requestAnimationFrame(loop);
