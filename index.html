@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>𓃥白六木琴工坊 - 聲部輪替版</title>
+    <title>𓃥白六木琴工坊 - 記憶聲部版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --danger: #ef4444; --success: #10b981; }
@@ -34,7 +34,7 @@
         .action-btn { padding: 10px 14px; border-radius: 12px; border: 1px solid #475569; font-weight: bold; color: #e2e8f0; cursor: pointer; font-size: 13px; background: #1e293b; transition: all 0.2s; }
         .action-btn:hover { background: #334155; }
         #startBtn { background: #064e3b; border-color: #065f46; color: #6ee7b7; }
-        #cycleBtn { background: #1e1b4b; border-color: #312e81; color: #c7d2fe; } /* 深紫色按鈕 */
+        #cycleBtn { background: #1e1b4b; border-color: #312e81; color: #c7d2fe; }
 
         .primary-btn { width: 100%; padding: 16px; border-radius: 14px; background: var(--accent); color: white; border: none; font-weight: bold; cursor: pointer; font-size: 16px; }
         #photoPreview { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 10px; }
@@ -91,8 +91,9 @@ const canvas = document.getElementById('stage');
 const ctx = canvas.getContext('2d', { alpha: false });
 let audioCtx, tracks = [], isRunning = false, isBallMoving = false, isPaused = false, gallery = [], stars = [];
 let camX = 0, camY = 0, midiData = null, currentMsg = "";
-let trackOffset = 0; // 用於輪替聲部
-const cornerImg = new Image(); cornerImg.src = 'IMG_6604.png';
+
+// 從 localStorage 讀取上次紀錄，若無則預設為 0
+let trackOffset = parseInt(localStorage.getItem('whiteSixTrackOffset')) || 0;
 
 const GRAVITY = 5200;
 const BALL_VX = 400;    
@@ -139,12 +140,10 @@ function previewImages(input) {
     });
 }
 
-// 核心初始化逻辑封裝，以便輪替時呼叫
 async function initPhysics() {
     tracks = [];
     const allTracksSorted = [...midiData.tracks].sort((a,b) => b.notes.length - a.notes.length);
     
-    // 根據 offset 選擇 3 個聲部，若超出長度則取模
     const selectedTracks = [];
     for(let i=0; i<3; i++) {
         let idx = (trackOffset + i) % allTracksSorted.length;
@@ -224,7 +223,6 @@ async function enterScene() {
     
     await initPhysics();
 
-    // 處理照片位置
     const gFiles = document.getElementById('galleryFiles').files;
     gallery = [];
     const redTrack = tracks[0];
@@ -248,14 +246,15 @@ function startApp() {
     document.getElementById('uiPanel').classList.add('collapsed');
 }
 
-// 輪替聲部功能
+// 切換聲部並保存到 localStorage
 async function cycleTracks() {
     trackOffset++;
+    localStorage.setItem('whiteSixTrackOffset', trackOffset); // 紀錄最後一次的 offset
     isBallMoving = false;
     document.getElementById('startBtn').innerText = "開始播放";
     await initPhysics();
     if (audioCtx.state === 'suspended') audioCtx.resume();
-    isBallMoving = true; // 切換後自動開始
+    isBallMoving = true;
 }
 
 function togglePause() {
