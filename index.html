@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>木琴工坊 App - 照片廊道版</title>
+    <title>木琴工坊 App - 全員同步終點版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --success: #10b981; }
@@ -15,23 +15,23 @@
         .toggle-btn { width: 55px; height: 55px; border-radius: 50%; background: #1e293b; border: 2px solid #475569; color: white; font-size: 24px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
         .action-btn { padding: 12px 24px; border-radius: 12px; border: none; font-weight: bold; color: white; cursor: pointer; }
         #startBtn { background: var(--success); }
-        #photoPreview { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 12px 0; }
-        .photo-thumb { aspect-ratio: 1; background: #1e293b; border-radius: 6px; overflow: hidden; }
         input[type="file"], input[type="text"] { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #334155; background: #0f172a; color: #fff; margin-bottom: 12px; box-sizing: border-box; }
         .primary-btn { width: 100%; padding: 16px; border-radius: 14px; background: var(--accent); color: white; border: none; font-weight: bold; }
+        #photoPreview { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 12px 0; }
+        .photo-thumb { aspect-ratio: 1; background: #1e293b; border-radius: 6px; overflow: hidden; }
     </style>
 </head>
 <body>
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="text-align:center; margin-top:0; color:var(--accent);">🎹 木琴工坊 - 照片廊道</h2>
+        <h2 style="text-align:center; margin-top:0; color:var(--accent);">🎹 木琴工坊 - 同步終點</h2>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleMidi(this)">
-        <div id="trackInfo" style="font-size:12px; color:#94a3b8; margin:10px 0;">照片將沿著紅球路徑排列...</div>
+        <div id="trackInfo" style="font-size:12px; color:#94a3b8; margin:10px 0;">已加入「隱藏延續路徑」確保全員同步結束。</div>
         <input type="file" id="galleryFiles" multiple accept="image/*" onchange="previewImages(this)">
         <div id="photoPreview"></div>
-        <input type="text" id="msgInit" value="Memory Corridor.">
-        <button id="entryBtn" class="primary-btn" onclick="enterScene()" disabled>生成廊道</button>
+        <input type="text" id="msgInit" value="Synchronized Grand Finale.">
+        <button id="entryBtn" class="primary-btn" onclick="enterScene()" disabled>準備就緒</button>
     </div>
 </div>
 
@@ -69,7 +69,8 @@ function handleMidi(input) {
 function previewImages(input) {
     const container = document.getElementById('photoPreview'); container.innerHTML = "";
     Array.from(input.files).slice(0, 20).forEach(file => {
-        const div = document.createElement('div'); div.className = 'photo-thumb';
+        const div = document.createElement('div');
+        div.className = 'photo-thumb';
         const img = document.createElement('img'); img.src = URL.createObjectURL(file);
         img.style.width="100%"; img.style.height="100%"; img.style.objectFit="cover";
         div.appendChild(img); container.appendChild(div);
@@ -80,9 +81,14 @@ async function enterScene() {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     currentMsg = document.getElementById('msgInit').value;
     
-    // 紅球為第一軌 (通常是旋律最豐富的)
     const sorted = [...midiData.tracks].sort((a,b) => b.notes.length - a.notes.length).slice(0, 3);
+    
+    // 找出所有人最早的開始與最晚的結束
     let globalStartTime = Math.min(...sorted.map(t => t.notes[0]?.time || 0));
+    let globalEndTime = Math.max(...sorted.map(t => {
+        let lastNote = t.notes[t.notes.length-1];
+        return lastNote ? lastNote.time + lastNote.duration : 0;
+    }));
 
     sorted.forEach((track, idx) => {
         const steps = [];
@@ -92,16 +98,14 @@ async function enterScene() {
         let lastTime = -1;
 
         rawNotes.forEach(n => {
-            if (n.time > lastTime + 0.05) {
-                filtered.push(n);
-                lastTime = n.time;
-            } else if (n.duration < filtered[filtered.length-1].duration) {
-                filtered[filtered.length-1] = n;
-            }
+            if (n.time > lastTime + 0.05) { filtered.push(n); lastTime = n.time; }
+            else if (n.duration < filtered[filtered.length-1].duration) { filtered[filtered.length-1] = n; }
         });
 
         let startX = globalStartTime * BALL_VX;
         let startY = (canvas.height * 0.3 + baseOffset);
+
+        // [起點補齊]
         steps.push({ x: startX, y: startY, w: (filtered[0].time - globalStartTime) * BALL_VX + 10, isNote: false, active: 0 });
 
         filtered.forEach((n, i) => {
@@ -114,32 +118,27 @@ async function enterScene() {
             if (gap > 0) prev.w += gap + 5; 
             steps.push({ x, y, w, freq: 440*Math.pow(2,(n.midi-69)/12), isNote: true, active: 0 });
         });
+
+        // [終點補齊] - 核心修正
+        let currentLastX = steps[steps.length - 1].x + steps[steps.length - 1].w;
+        let finalTargetX = globalEndTime * BALL_VX + 200;
+        if (currentLastX < finalTargetX) {
+            steps.push({ x: currentLastX, y: steps[steps.length - 1].y, w: finalTargetX - currentLastX, isNote: false, active: 0 });
+        }
         
         tracks.push({ steps, ball: { x: startX + 5, y: steps[0].y - BALL_R, vx: BALL_VX, vy: 0, color: TRACK_COLORS[idx] }, cur: 0 });
     });
 
-    // --- 廊道化排列邏輯 ---
     const gFiles = document.getElementById('galleryFiles').files;
-    const redTrack = tracks[0]; // 紅球軌道
-    const stepInterval = Math.max(1, Math.floor(redTrack.steps.length / gFiles.length));
+    const redTrack = tracks[0];
+    const stepInterval = Math.max(1, Math.floor(redTrack.steps.length / (gFiles.length || 1)));
 
     for (let i = 0; i < gFiles.length; i++) {
         const img = new Image(); img.src = URL.createObjectURL(gFiles[i]);
         await new Promise(r => img.onload = r);
-        
-        // 沿著紅球的節點排列
         const targetStep = redTrack.steps[Math.min(i * stepInterval + 2, redTrack.steps.length - 1)];
-        const side = (i % 2 === 0) ? -1 : 1; // 左右交替
-        
-        gallery.push({
-            img,
-            x: targetStep.x,
-            y: targetStep.y + (side * 180) - 100, // 分佈在紅球路徑上下（視覺上的兩側）
-            w: 160,
-            h: 160 * (img.height/img.width),
-            rot: (Math.random() - 0.5) * 0.15,
-            opacity: 0
-        });
+        const side = (i % 2 === 0) ? -1 : 1;
+        gallery.push({ img, x: targetStep.x, y: targetStep.y + (side * 180) - 100, w: 160, h: 160 * (img.height/img.width), rot: (Math.random() - 0.5) * 0.15 });
     }
 
     document.getElementById('setupPanel').style.display = 'none';
@@ -178,12 +177,16 @@ function loop() {
                     break;
                 }
             }
-            if (b.y > s_cur.y + 200 && t.cur >= t.steps.length - 1) { b.vy = 0; b.vx = 0; }
+            // 碰到所有人中最後一個音的隱藏延伸終點才停
+            if (b.x > t.steps[t.steps.length-1].x + t.steps[t.steps.length-1].w - 10) {
+                b.vx = 0; b.vy = 0;
+            }
         });
         const mb = tracks[0].ball;
         camX += (mb.x - canvas.width * 0.22 - camX) * 0.1;
         camY += (mb.y - canvas.height * 0.45 - camY) * 0.05;
-        if (mb.x > tracks[0].steps[tracks[0].steps.length-1].x + 1500) isBallMoving = false;
+        // 當三顆球都靜止（到達各自的同步終點），則停止播放
+        if (tracks.every(t => t.ball.vx === 0)) isBallMoving = false;
     }
     draw();
     requestAnimationFrame(loop);
@@ -211,20 +214,16 @@ function draw() {
 
     ctx.save();
     ctx.translate(canvas.width/2, canvas.height/2);
-    ctx.scale(0.5, 0.5); // 稍微縮小一點，增加廊道的視距感
+    ctx.scale(0.5, 0.5); 
     ctx.translate(-canvas.width/2, -canvas.height/2);
     ctx.translate(-camX, -camY);
 
-    // 繪製照片廊道 (在音板下方，形成背景感)
     gallery.forEach(p => {
-        const dist = Math.abs(p.x - camX);
-        if(dist < 1800) {
+        if(Math.abs(p.x - camX) < 1800) {
             ctx.save();
-            ctx.translate(p.x + p.w/2, p.y + p.h/2);
-            ctx.rotate(p.rot);
-            // 遠近淡入淡出效果
-            const alpha = Math.max(0, 1 - dist/1500);
-            ctx.globalAlpha = alpha;
+            ctx.translate(p.x + p.w/2, p.y + p.h/2); ctx.rotate(p.rot);
+            const dist = Math.abs(p.x - camX);
+            ctx.globalAlpha = Math.max(0, 1 - dist/1500);
             ctx.fillStyle = "#fff"; ctx.fillRect(-p.w/2-6, -p.h/2-6, p.w+12, p.h+12);
             ctx.drawImage(p.img, -p.w/2, -p.h/2, p.w, p.h);
             ctx.restore();
@@ -234,6 +233,7 @@ function draw() {
     tracks.forEach(t => {
         t.steps.forEach(s => {
             if(Math.abs(s.x - camX) < 1400) {
+                // 隱藏延伸路徑會顯示極淡的顏色，避免視覺干擾
                 ctx.fillStyle = s.active ? "#fff" : (s.isNote ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.03)");
                 ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, 18, 9); ctx.fill();
             }
