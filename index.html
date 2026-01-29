@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>𓃥白六木琴工坊 - 物理強化版</title>
+    <title>𓃥白六木琴工坊 - 深色操作版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --danger: #ef4444; --success: #10b981; }
@@ -24,15 +24,20 @@
         /* 播放畫面專用操作面板 */
         #uiPanel { position: fixed; bottom: 30px; right: 20px; z-index: 10000; display: none; flex-direction: column; align-items: flex-end; }
         .panel-content { 
-            background: rgba(15, 23, 42, 0.9); padding: 12px; border-radius: 20px; border: 1px solid #475569; 
+            background: rgba(10, 15, 25, 0.95); padding: 12px; border-radius: 20px; border: 1px solid #334155; 
             display: flex; gap: 10px; backdrop-filter: blur(20px);
             transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         }
         #uiPanel.collapsed .panel-content { opacity: 0; transform: scale(0.6) translateY(40px); pointer-events: none; }
         
-        .toggle-btn { width: 56px; height: 56px; border-radius: 50%; background: #1e293b; border: 2px solid #475569; color: white; font-size: 24px; cursor: pointer; display: flex; align-items: center; justify-content: center; margin-top: 10px; }
-        .action-btn { padding: 12px 18px; border-radius: 12px; border: none; font-weight: bold; color: white; cursor: pointer; font-size: 14px; }
-        #startBtn { background: var(--success); }
+        .toggle-btn { width: 56px; height: 56px; border-radius: 50%; background: #0f172a; border: 2px solid #334155; color: white; font-size: 24px; cursor: pointer; display: flex; align-items: center; justify-content: center; margin-top: 10px; }
+        
+        /* 修改按鈕為深色調 */
+        .action-btn { padding: 12px 18px; border-radius: 12px; border: 1px solid #475569; font-weight: bold; color: #e2e8f0; cursor: pointer; font-size: 14px; background: #1e293b; transition: background 0.2s; }
+        .action-btn:hover { background: #334155; }
+        #startBtn { background: #064e3b; border-color: #065f46; color: #6ee7b7; } /* 深綠 */
+        #startBtn:hover { background: #065f46; }
+        
         .primary-btn { width: 100%; padding: 16px; border-radius: 14px; background: var(--accent); color: white; border: none; font-weight: bold; cursor: pointer; font-size: 16px; }
         #photoPreview { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 10px; }
         .photo-thumb { aspect-ratio: 1; background: #1e293b; border-radius: 6px; overflow: hidden; }
@@ -94,8 +99,8 @@ let audioCtx, tracks = [], isRunning = false, isBallMoving = false, isPaused = f
 let camX = 0, camY = 0, midiData = null, currentMsg = "";
 const cornerImg = new Image(); cornerImg.src = 'IMG_6604.png';
 
-// --- 依照指令調整重力與相關數值 ---
-const GRAVITY = 5200;    // 提升重力
+// 保持你要求的重力設定
+const GRAVITY = 5200;
 const BALL_VX = 400;    
 const BOUNCE_UP = -22;  
 const BALL_R = 12;
