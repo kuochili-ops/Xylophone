@@ -3,24 +3,25 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>𓃥白六木琴工坊 - 曲目多選版</title>
+    <title>𓃥白六木琴工坊 - 預設三曲</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --danger: #ef4444; --success: #10b981; }
         body { margin: 0; background: #010409; color: #fff; font-family: -apple-system, sans-serif; overflow: hidden; touch-action: none; }
         
+        /* 初始設置面板 */
         #setupPanel { position: fixed; inset: 0; background: #020617; z-index: 9999; padding: 20px; display: flex; flex-direction: column; align-items: center; overflow-y: auto; }
         .config-card { background: rgba(15, 23, 42, 0.98); padding: 25px; border-radius: 24px; border: 1px solid #334155; width: 90%; max-width: 420px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
         .input-group { margin-bottom: 20px; }
         .input-group label { display: block; margin-bottom: 8px; font-size: 14px; color: #94a3b8; font-weight: bold; }
         
-        /* 選單與輸入框樣式 */
         select, input[type="file"], input[type="text"] { 
             width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #334155; 
             background: #0f172a; color: #fff; box-sizing: border-box; font-size: 14px;
         }
         select { cursor: pointer; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='white'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; background-size: 16px; }
 
+        /* 播放畫面專用操作面板 */
         #uiPanel { position: fixed; bottom: 30px; right: 20px; z-index: 10000; display: none; flex-direction: column; align-items: flex-end; }
         .panel-content { 
             background: rgba(15, 23, 42, 0.9); padding: 12px; border-radius: 20px; border: 1px solid #475569; 
@@ -45,22 +46,23 @@
         <h2 style="text-align:center; margin-top:0; color:var(--accent);">🎹 𓃥白六木琴工坊</h2>
         
         <div class="input-group">
-            <label>1. 選擇預設曲目</label>
+            <label>1. 選擇預設曲目 (需檔案在同目錄)</label>
             <select id="midiSelect" onchange="changeDefaultMidi(this.value)">
-                <option value="b3501.mid">預設：b3501.mid</option>
-                <option value="Hawaii.mid">經典：Hawaii.mid</option>
-                <option value="custom" disabled>--- 或從下方自行上傳 ---</option>
+                <option value="b3501.mid">b3501.mid (預設)</option>
+                <option value="kaze.mid">kaze.mid</option>
+                <option value="Mario Bros. - Super Mario Bros. Theme.mid">Super Mario Bros. Theme</option>
+                <option value="custom" disabled>--- 或手動上傳下方檔案 ---</option>
             </select>
         </div>
 
         <div class="input-group">
-            <label>或者：手動上傳新 MIDI</label>
+            <label>或者：上傳自訂 MIDI</label>
             <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleManualUpload(this)">
-            <div id="midiStatus" class="status-msg">已準備就緒</div>
+            <div id="midiStatus" class="status-msg">已載入：b3501.mid</div>
         </div>
 
         <div class="input-group">
-            <label>2. 上傳背景照片 (可多選)</label>
+            <label>2. 上傳多張背景照片 (可多選)</label>
             <input type="file" id="galleryFiles" multiple accept="image/*" onchange="previewImages(this)">
             <div id="photoPreview"></div>
         </div>
@@ -99,14 +101,13 @@ function getNoteColor(midi) {
     return `hsla(${hue}, 80%, 65%, 0.85)`;
 }
 
-// 載入伺服器端 MIDI
 async function loadServerMidi(filename) {
     try {
         const response = await fetch(filename);
         if (response.ok) {
             const buf = await response.arrayBuffer();
             midiData = new Midi(buf);
-            document.getElementById('midiStatus').innerText = `✅ 已載入伺服器檔案: ${filename}`;
+            document.getElementById('midiStatus').innerText = `✅ 已載入檔案: ${filename}`;
         } else {
             document.getElementById('midiStatus').innerText = `⚠️ 找不到 ${filename}`;
         }
@@ -115,7 +116,7 @@ async function loadServerMidi(filename) {
     }
 }
 
-// 初始化先載入預設
+// 初始加載 b3501.mid
 loadServerMidi('b3501.mid');
 
 function changeDefaultMidi(val) {
@@ -127,24 +128,19 @@ function handleManualUpload(input) {
         const file = input.files[0];
         file.arrayBuffer().then(buf => {
             midiData = new Midi(buf);
-            document.getElementById('midiStatus').innerText = "✅ 已切換為上傳檔案: " + file.name;
-            // 將選單標記為自定義
+            document.getElementById('midiStatus').innerText = "✅ 已上傳檔案: " + file.name;
             const select = document.getElementById('midiSelect');
             const customOpt = select.querySelector('option[value="custom"]');
-            customOpt.innerText = "已上傳：" + file.name;
+            customOpt.innerText = "自訂：" + file.name;
             customOpt.disabled = false;
             select.value = "custom";
         });
     }
 }
 
-// (其餘繪圖、物理邏輯、照片預覽邏輯與之前版本相同...)
-// 包含 enterScene, startApp, togglePause, loop, hitStep, draw, initStars...
-// ...此處省略重複邏輯以節省篇幅，內容與上一版本完全一致...
-
 function previewImages(input) {
     const container = document.getElementById('photoPreview'); container.innerHTML = "";
-    Array.from(input.files).slice(0, 20).forEach(file => {
+    Array.from(input.files).slice(0, 30).forEach(file => {
         const div = document.createElement('div'); div.className = 'photo-thumb';
         const img = document.createElement('img'); img.src = URL.createObjectURL(file);
         img.style.width="100%"; img.style.height="100%"; img.style.objectFit="cover";
@@ -152,10 +148,14 @@ function previewImages(input) {
     });
 }
 
+// 物理與繪圖邏輯與先前版本一致...
 async function enterScene() {
-    if(!midiData) { alert("尚未載入 MIDI 數據"); return; }
+    if(!midiData) { alert("尚未準備好 MIDI 資料"); return; }
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     currentMsg = document.getElementById('msgInit').value;
+    
+    // 清除舊資料
+    tracks = []; gallery = [];
     
     const sorted = [...midiData.tracks].sort((a,b) => b.notes.length - a.notes.length).slice(0, 3);
     let globalStartTime = Math.min(...sorted.map(t => t.notes[0]?.time || 0));
@@ -237,11 +237,6 @@ async function enterScene() {
     isRunning = true; requestAnimationFrame(loop);
 }
 
-function initStars() {
-    stars = [];
-    for(let i=0; i<80; i++) stars.push({ x: Math.random()*canvas.width, y: Math.random()*canvas.height, size: Math.random()*1.2, opacity: Math.random() });
-}
-
 function startApp() {
     if (audioCtx.state === 'suspended') audioCtx.resume();
     isBallMoving = true;
@@ -297,6 +292,11 @@ function hitStep(s) {
     s.active = 1;
 }
 
+function initStars() {
+    stars = [];
+    for(let i=0; i<80; i++) stars.push({ x: Math.random()*canvas.width, y: Math.random()*canvas.height, size: Math.random()*1.2, opacity: Math.random() });
+}
+
 function draw() {
     ctx.fillStyle = "#010409"; ctx.fillRect(0, 0, canvas.width, canvas.height);
     stars.forEach(s => {
@@ -349,6 +349,7 @@ function draw() {
     }
 }
 canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; });
 </script>
 </body>
 </html>
