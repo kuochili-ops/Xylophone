@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>木琴工坊 App - 簡約單路徑</title>
+    <title>木琴工坊 App - 深度穩定版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --success: #10b981; }
@@ -16,22 +16,22 @@
         .toggle-btn { width: 55px; height: 55px; border-radius: 50%; background: #1e293b; border: 2px solid #475569; color: white; font-size: 24px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
         .action-btn { padding: 12px 24px; border-radius: 12px; border: none; font-weight: bold; color: white; cursor: pointer; }
         #startBtn { background: var(--success); }
-        #photoPreview { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 12px 0; }
-        .photo-thumb { aspect-ratio: 1; background: #1e293b; border-radius: 6px; overflow: hidden; }
         input[type="file"], input[type="text"] { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #334155; background: #0f172a; color: #fff; margin-bottom: 12px; box-sizing: border-box; }
         .primary-btn { width: 100%; padding: 16px; border-radius: 14px; background: var(--accent); color: white; border: none; font-weight: bold; }
+        #photoPreview { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 12px 0; }
+        .photo-thumb { aspect-ratio: 1; background: #1e293b; border-radius: 6px; overflow: hidden; }
     </style>
 </head>
 <body>
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="text-align:center; margin-top:0; color:var(--accent);">🎹 木琴工坊 - 簡約模式</h2>
+        <h2 style="text-align:center; margin-top:0; color:var(--accent);">🎹 木琴工坊 - 深度穩定</h2>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleMidi(this)">
-        <div id="trackInfo" style="font-size:12px; color:#94a3b8; margin:10px 0;">自動移除長音/重複音板...</div>
+        <div id="trackInfo" style="font-size:12px; color:#94a3b8; margin:10px 0;">已修復空降與重複音跳動...</div>
         <input type="file" id="galleryFiles" multiple accept="image/*" onchange="previewImages(this)">
         <div id="photoPreview"></div>
-        <input type="text" id="msgInit" value="Clear Melody Path.">
+        <input type="text" id="msgInit" value="Ultimate Smoothness.">
         <button id="entryBtn" class="primary-btn" onclick="enterScene()" disabled>準備就緒</button>
     </div>
 </div>
@@ -62,7 +62,6 @@ function handleMidi(input) {
     if(input.files[0]) {
         input.files[0].arrayBuffer().then(buf => {
             midiData = new Midi(buf);
-            document.getElementById('trackInfo').innerText = "和弦音過濾已啟用。";
             document.getElementById('entryBtn').disabled = false;
         });
     }
@@ -88,45 +87,36 @@ async function enterScene() {
         const steps = [];
         const baseOffset = idx * 220;
         
-        // --- 核心過濾邏輯：移除同時間較長的音符 ---
-        const filteredNotes = [];
-        const sortedNotes = track.notes.sort((a,b) => a.time - b.time);
-        
-        sortedNotes.forEach(n => {
-            if (filteredNotes.length === 0) {
-                filteredNotes.push(n);
-            } else {
-                let last = filteredNotes[filteredNotes.length - 1];
-                // 如果兩個音時間非常接近 (和弦)
-                if (Math.abs(n.time - last.time) < 0.05) {
-                    // 移除較長的音板：如果目前這個音比較短，就替換掉上一個
-                    if (n.duration < last.duration) {
-                        filteredNotes[filteredNotes.length - 1] = n;
-                    }
-                } else {
-                    filteredNotes.push(n);
-                }
+        // 1. 去重並過濾長音，按時間嚴格排序
+        let rawNotes = track.notes.sort((a,b) => a.time - b.time);
+        let lastTime = -1;
+        let filtered = [];
+        rawNotes.forEach(n => {
+            if (n.time > lastTime + 0.05) { // 去除極密集的重複音
+                filtered.push(n);
+                lastTime = n.time;
+            } else if (n.duration < filtered[filtered.length-1].duration) {
+                filtered[filtered.length-1] = n; // 保留較短音板
             }
         });
 
         let startX = globalStartTime * BALL_VX;
         let startY = (canvas.height * 0.3 + baseOffset);
 
-        if (filteredNotes[0].time > globalStartTime) {
-            steps.push({ x: startX, y: startY, w: (filteredNotes[0].time - globalStartTime) * BALL_VX + 10, isNote: false, active: 0 });
-        }
+        // 起始導航平台
+        steps.push({ x: startX, y: startY, w: (filtered[0].time - globalStartTime) * BALL_VX + 10, isNote: false, active: 0 });
 
-        filteredNotes.forEach((n, i) => {
+        filtered.forEach((n, i) => {
             let x = n.time * BALL_VX;
             let y = startY + (i * 18);
             let w = Math.max(n.duration * BALL_VX, 50);
             
-            if (steps.length > 0) {
-                let prev = steps[steps.length - 1];
-                if (x < prev.x + 5) x = prev.x + 5; 
-                let gap = x - (prev.x + prev.w);
-                if (gap > 0) prev.w += gap + 2; 
-            }
+            // 橋接：強制 X 軸單向增長，不回頭
+            let prev = steps[steps.length - 1];
+            if (x < prev.x + 2) x = prev.x + 2; 
+            let gap = x - (prev.x + prev.w);
+            if (gap > 0) prev.w += gap + 5; 
+
             steps.push({ x, y, w, freq: 440*Math.pow(2,(n.midi-69)/12), isNote: true, active: 0 });
         });
         
@@ -174,10 +164,10 @@ function loop() {
             let prevY = b.y;
             b.vy += GRAVITY * dt; b.x += b.vx * dt; b.y += b.vy * dt;
             
+            // --- 穩定性優化：防止沒路跳動 ---
             let s_cur = t.steps[t.cur];
-            if (b.y > s_cur.y + 80) { b.y = s_cur.y - BALL_R; b.vy = 0; }
-
-            for (let i = t.cur; i < Math.min(t.cur + 8, t.steps.length); i++) {
+            // 只有當球的 X 超過當前音板很多，才允許更新 cur，且 cur 只能增加
+            for (let i = t.cur; i < Math.min(t.cur + 15, t.steps.length); i++) {
                 let step = t.steps[i];
                 if (b.x >= step.x && b.x <= step.x + step.w && prevY + BALL_R <= step.y + 15 && b.y + BALL_R >= step.y) {
                     b.y = step.y - BALL_R; 
@@ -186,6 +176,10 @@ function loop() {
                     if(!step.active && step.isNote) hitStep(step);
                     break;
                 }
+            }
+            // 如果球掉下去了，且後面真的沒路了，停止球的運動
+            if (b.y > s_cur.y + 150 && t.cur >= t.steps.length - 1) {
+                b.vy = 0; b.vx = 0;
             }
         });
         const mb = tracks[0].ball;
@@ -226,8 +220,7 @@ function draw() {
     gallery.forEach(p => {
         if(Math.abs(p.x - camX) < 1800) {
             ctx.save();
-            ctx.translate(p.x + p.w/2, p.y + p.h/2);
-            ctx.rotate(p.rot);
+            ctx.translate(p.x + p.w/2, p.y + p.h/2); ctx.rotate(p.rot);
             ctx.fillStyle = "#fff"; ctx.fillRect(-p.w/2-5, -p.h/2-5, p.w+10, p.h+10);
             ctx.drawImage(p.img, -p.w/2, -p.h/2, p.w, p.h);
             ctx.restore();
