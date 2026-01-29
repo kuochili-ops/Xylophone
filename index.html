@@ -3,42 +3,36 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>𓃥白六木琴工坊 - 預設曲目版</title>
+    <title>𓃥白六木琴工坊 - 曲目多選版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --danger: #ef4444; --success: #10b981; }
         body { margin: 0; background: #010409; color: #fff; font-family: -apple-system, sans-serif; overflow: hidden; touch-action: none; }
         
-        /* 初始設置面板 */
         #setupPanel { position: fixed; inset: 0; background: #020617; z-index: 9999; padding: 20px; display: flex; flex-direction: column; align-items: center; overflow-y: auto; }
         .config-card { background: rgba(15, 23, 42, 0.98); padding: 25px; border-radius: 24px; border: 1px solid #334155; width: 90%; max-width: 420px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
         .input-group { margin-bottom: 20px; }
         .input-group label { display: block; margin-bottom: 8px; font-size: 14px; color: #94a3b8; font-weight: bold; }
         
-        /* 播放畫面專用操作面板 (僅在場景內顯示) */
+        /* 選單與輸入框樣式 */
+        select, input[type="file"], input[type="text"] { 
+            width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #334155; 
+            background: #0f172a; color: #fff; box-sizing: border-box; font-size: 14px;
+        }
+        select { cursor: pointer; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='white'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; background-size: 16px; }
+
         #uiPanel { position: fixed; bottom: 30px; right: 20px; z-index: 10000; display: none; flex-direction: column; align-items: flex-end; }
         .panel-content { 
             background: rgba(15, 23, 42, 0.9); padding: 12px; border-radius: 20px; border: 1px solid #475569; 
-            display: flex; gap: 10px; backdrop-filter: blur(20px); box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            display: flex; gap: 10px; backdrop-filter: blur(20px);
             transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            transform-origin: right bottom;
         }
         #uiPanel.collapsed .panel-content { opacity: 0; transform: scale(0.6) translateY(40px); pointer-events: none; }
         
-        .toggle-btn { 
-            width: 56px; height: 56px; border-radius: 50%; background: #1e293b; border: 2px solid #475569; 
-            color: white; font-size: 24px; cursor: pointer; display: flex; align-items: center; justify-content: center;
-            margin-top: 10px; -webkit-tap-highlight-color: transparent;
-        }
-
+        .toggle-btn { width: 56px; height: 56px; border-radius: 50%; background: #1e293b; border: 2px solid #475569; color: white; font-size: 24px; cursor: pointer; display: flex; align-items: center; justify-content: center; margin-top: 10px; }
         .action-btn { padding: 12px 18px; border-radius: 12px; border: none; font-weight: bold; color: white; cursor: pointer; font-size: 14px; }
         #startBtn { background: var(--success); }
-        #pauseBtn { background: #64748b; }
-        #resetBtn { background: var(--danger); }
-
-        input[type="file"], input[type="text"] { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #334155; background: #0f172a; color: #fff; box-sizing: border-box; }
-        .primary-btn { width: 100%; padding: 16px; border-radius: 14px; background: var(--accent); color: white; border: none; font-weight: bold; cursor: pointer; font-size: 16px; transition: opacity 0.2s; }
-        .primary-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .primary-btn { width: 100%; padding: 16px; border-radius: 14px; background: var(--accent); color: white; border: none; font-weight: bold; cursor: pointer; font-size: 16px; }
         #photoPreview { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 10px; }
         .photo-thumb { aspect-ratio: 1; background: #1e293b; border-radius: 6px; overflow: hidden; }
         .status-msg { font-size: 12px; margin-top: 5px; color: var(--success); }
@@ -51,20 +45,29 @@
         <h2 style="text-align:center; margin-top:0; color:var(--accent);">🎹 𓃥白六木琴工坊</h2>
         
         <div class="input-group">
-            <label>1. 上傳音樂 (.mid / .midi)</label>
-            <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleMidi(this)">
-            <div id="midiStatus" class="status-msg">正在確認預設曲目 b3501.mid...</div>
+            <label>1. 選擇預設曲目</label>
+            <select id="midiSelect" onchange="changeDefaultMidi(this.value)">
+                <option value="b3501.mid">預設：b3501.mid</option>
+                <option value="Hawaii.mid">經典：Hawaii.mid</option>
+                <option value="custom" disabled>--- 或從下方自行上傳 ---</option>
+            </select>
         </div>
 
         <div class="input-group">
-            <label>2. 上傳多張背景照片 (一次選取多個檔案)</label>
+            <label>或者：手動上傳新 MIDI</label>
+            <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleManualUpload(this)">
+            <div id="midiStatus" class="status-msg">已準備就緒</div>
+        </div>
+
+        <div class="input-group">
+            <label>2. 上傳背景照片 (可多選)</label>
             <input type="file" id="galleryFiles" multiple accept="image/*" onchange="previewImages(this)">
             <div id="photoPreview"></div>
         </div>
 
         <div class="input-group">
             <label>3. 結束畫面訊息</label>
-            <input type="text" id="msgInit" value="Thank you for watching!">
+            <input type="text" id="msgInit" value="演出結束，感謝欣賞">
         </div>
 
         <button id="entryBtn" class="primary-btn" onclick="enterScene()">進入播放場景</button>
@@ -75,7 +78,7 @@
     <div class="panel-content">
         <button id="startBtn" class="action-btn" onclick="startApp()">開始播放</button>
         <button id="pauseBtn" class="action-btn" onclick="togglePause()">暫停</button>
-        <button id="resetBtn" class="action-btn" onclick="location.reload()">重回設定</button>
+        <button id="resetBtn" class="action-btn" onclick="location.reload()">重新設定</button>
     </div>
     <button class="toggle-btn" onclick="document.getElementById('uiPanel').classList.toggle('collapsed')">⚙️</button>
 </div>
@@ -96,33 +99,48 @@ function getNoteColor(midi) {
     return `hsla(${hue}, 80%, 65%, 0.85)`;
 }
 
-// 嘗試載入伺服器上的 b3501.mid
-async function loadDefaultMidi() {
+// 載入伺服器端 MIDI
+async function loadServerMidi(filename) {
     try {
-        const response = await fetch('b3501.mid');
+        const response = await fetch(filename);
         if (response.ok) {
             const buf = await response.arrayBuffer();
             midiData = new Midi(buf);
-            document.getElementById('midiStatus').innerText = "✅ 已準備好預設曲目: b3501.mid";
+            document.getElementById('midiStatus').innerText = `✅ 已載入伺服器檔案: ${filename}`;
         } else {
-            document.getElementById('midiStatus').innerText = "⚠️ 找不到 b3501.mid，請手動上傳。";
+            document.getElementById('midiStatus').innerText = `⚠️ 找不到 ${filename}`;
         }
     } catch (e) {
-        document.getElementById('midiStatus').innerText = "⚠️ 無法載入預設曲目。";
+        document.getElementById('midiStatus').innerText = "⚠️ 載入失敗";
     }
 }
-loadDefaultMidi();
 
-canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+// 初始化先載入預設
+loadServerMidi('b3501.mid');
 
-function handleMidi(input) {
+function changeDefaultMidi(val) {
+    if(val !== "custom") loadServerMidi(val);
+}
+
+function handleManualUpload(input) {
     if(input.files[0]) {
-        input.files[0].arrayBuffer().then(buf => {
+        const file = input.files[0];
+        file.arrayBuffer().then(buf => {
             midiData = new Midi(buf);
-            document.getElementById('midiStatus').innerText = "✅ 已成功讀取上傳檔案: " + input.files[0].name;
+            document.getElementById('midiStatus').innerText = "✅ 已切換為上傳檔案: " + file.name;
+            // 將選單標記為自定義
+            const select = document.getElementById('midiSelect');
+            const customOpt = select.querySelector('option[value="custom"]');
+            customOpt.innerText = "已上傳：" + file.name;
+            customOpt.disabled = false;
+            select.value = "custom";
         });
     }
 }
+
+// (其餘繪圖、物理邏輯、照片預覽邏輯與之前版本相同...)
+// 包含 enterScene, startApp, togglePause, loop, hitStep, draw, initStars...
+// ...此處省略重複邏輯以節省篇幅，內容與上一版本完全一致...
 
 function previewImages(input) {
     const container = document.getElementById('photoPreview'); container.innerHTML = "";
@@ -135,10 +153,7 @@ function previewImages(input) {
 }
 
 async function enterScene() {
-    if(!midiData) {
-        alert("請上傳 MIDI 檔案或確認 b3501.mid 存在於同目錄。");
-        return;
-    }
+    if(!midiData) { alert("尚未載入 MIDI 數據"); return; }
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     currentMsg = document.getElementById('msgInit').value;
     
@@ -243,12 +258,10 @@ function togglePause() {
 function loop() {
     if (!isRunning) return;
     const dt = 1/60;
-    
     if (isBallMoving && !isPaused) {
         tracks.forEach(t => {
             const b = t.ball; let prevY = b.y;
             b.vy += GRAVITY * dt; b.x += b.vx * dt; b.y += b.vy * dt;
-            
             let onNoteStep = false;
             for (let i = t.cur; i < Math.min(t.cur + 15, t.steps.length); i++) {
                 let s = t.steps[i];
@@ -259,11 +272,9 @@ function loop() {
                     break;
                 }
             }
-
             if (!onNoteStep) b.tails.push({ x: b.x, y: b.y, r: BALL_R, opacity: 1 });
             b.tails.forEach(p => { p.opacity -= 0.05; p.r *= 0.94; });
             b.tails = b.tails.filter(p => p.opacity > 0);
-
             if (b.x > t.steps[t.steps.length-1].x + t.steps[t.steps.length-1].w - 10) { b.vx = 0; b.vy = 0; }
         });
         const mb = tracks[0].ball;
@@ -294,12 +305,9 @@ function draw() {
         ctx.fillStyle = `rgba(255,255,255,${s.opacity})`;
         ctx.beginPath(); ctx.arc(x, y, s.size, 0, Math.PI*2); ctx.fill();
     });
-
     ctx.save();
-    ctx.translate(canvas.width/2, canvas.height/2);
-    ctx.scale(0.5, 0.5); 
-    ctx.translate(-canvas.width/2, -canvas.height/2);
-    ctx.translate(-camX, -camY);
+    ctx.translate(canvas.width/2, canvas.height/2); ctx.scale(0.5, 0.5); 
+    ctx.translate(-canvas.width/2, -canvas.height/2); ctx.translate(-camX, -camY);
 
     gallery.forEach(p => {
         const dist = Math.abs(p.x - camX);
@@ -340,6 +348,7 @@ function draw() {
         if(cornerImg.complete) ctx.drawImage(cornerImg, canvas.width-150, canvas.height-170, 110, 110);
     }
 }
+canvas.width = window.innerWidth; canvas.height = window.innerHeight;
 </script>
 </body>
 </html>
