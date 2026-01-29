@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>𓃥白六木琴工坊 - 聲部校準版</title>
+    <title>𓃥白六木琴工坊 - 聲部輪替版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --danger: #ef4444; --success: #10b981; }
@@ -18,7 +18,8 @@
             width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #334155; 
             background: #0f172a; color: #fff; box-sizing: border-box; font-size: 14px;
         }
-        
+        select { cursor: pointer; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='white'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; background-size: 16px; }
+
         #uiPanel { position: fixed; bottom: 30px; right: 20px; z-index: 10000; display: none; flex-direction: column; align-items: flex-end; }
         .panel-content { 
             background: rgba(10, 15, 25, 0.95); padding: 12px; border-radius: 20px; border: 1px solid #334155; 
@@ -31,8 +32,9 @@
         .toggle-btn { width: 56px; height: 56px; border-radius: 50%; background: #0f172a; border: 2px solid #334155; color: white; font-size: 24px; cursor: pointer; display: flex; align-items: center; justify-content: center; margin-top: 10px; }
         
         .action-btn { padding: 10px 14px; border-radius: 12px; border: 1px solid #475569; font-weight: bold; color: #e2e8f0; cursor: pointer; font-size: 13px; background: #1e293b; transition: all 0.2s; }
+        .action-btn:hover { background: #334155; }
         #startBtn { background: #064e3b; border-color: #065f46; color: #6ee7b7; }
-        #cycleBtn { background: #1e1b4b; border-color: #312e81; color: #c7d2fe; }
+        #cycleBtn { background: #1e1b4b; border-color: #312e81; color: #c7d2fe; } /* 深紫色按鈕 */
 
         .primary-btn { width: 100%; padding: 16px; border-radius: 14px; background: var(--accent); color: white; border: none; font-weight: bold; cursor: pointer; font-size: 16px; }
         #photoPreview { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 10px; }
@@ -57,7 +59,7 @@
         <div class="input-group">
             <label>或者：上傳自訂 MIDI</label>
             <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleManualUpload(this)">
-            <div id="midiStatus" class="status-msg">待命中...</div>
+            <div id="midiStatus" class="status-msg">已載入：b3501.mid</div>
         </div>
         <div class="input-group">
             <label>2. 上傳多張背景照片</label>
@@ -77,7 +79,7 @@
         <button id="startBtn" class="action-btn" onclick="startApp()">開始播放</button>
         <button id="cycleBtn" class="action-btn" onclick="cycleTracks()">切換聲部</button>
         <button id="pauseBtn" class="action-btn" onclick="togglePause()">暫停</button>
-        <button id="resetBtn" class="action-btn" onclick="resetAllSettings()">重置紀錄</button>
+        <button id="resetBtn" class="action-btn" onclick="location.reload()">重新設定</button>
     </div>
     <button class="toggle-btn" onclick="document.getElementById('uiPanel').classList.toggle('collapsed')">⚙️</button>
 </div>
@@ -89,10 +91,8 @@ const canvas = document.getElementById('stage');
 const ctx = canvas.getContext('2d', { alpha: false });
 let audioCtx, tracks = [], isRunning = false, isBallMoving = false, isPaused = false, gallery = [], stars = [];
 let camX = 0, camY = 0, midiData = null, currentMsg = "";
-let showEndScreen = false;
-
-// 取得聲部紀錄
-let trackOffset = parseInt(localStorage.getItem('whiteSixTrackOffset')) || 0;
+let trackOffset = 0; // 用於輪替聲部
+const cornerImg = new Image(); cornerImg.src = 'IMG_6604.png';
 
 const GRAVITY = 5200;
 const BALL_VX = 400;    
@@ -139,24 +139,16 @@ function previewImages(input) {
     });
 }
 
+// 核心初始化逻辑封裝，以便輪替時呼叫
 async function initPhysics() {
-    if (!midiData) return;
     tracks = [];
-    showEndScreen = false;
-
-    // 關鍵修正：只過濾出有音符的軌道，避免 offset 指向空軌道
-    const validTracks = midiData.tracks.filter(t => t.notes.length > 0)
-                        .sort((a,b) => b.notes.length - a.notes.length);
+    const allTracksSorted = [...midiData.tracks].sort((a,b) => b.notes.length - a.notes.length);
     
-    if (validTracks.length === 0) {
-        alert("此 MIDI 檔案沒有有效音軌！");
-        return;
-    }
-
+    // 根據 offset 選擇 3 個聲部，若超出長度則取模
     const selectedTracks = [];
-    for(let i=0; i < Math.min(3, validTracks.length); i++) {
-        let idx = (trackOffset + i) % validTracks.length;
-        selectedTracks.push(validTracks[idx]);
+    for(let i=0; i<3; i++) {
+        let idx = (trackOffset + i) % allTracksSorted.length;
+        selectedTracks.push(allTracksSorted[idx]);
     }
 
     let globalStartTime = Math.min(...selectedTracks.map(t => t.notes[0]?.time || 0));
@@ -166,12 +158,35 @@ async function initPhysics() {
         const steps = [];
         const baseOffset = idx * 220;
         let rawNotes = track.notes.sort((a,b) => a.time - b.time);
+        let finalPathNotes = [];
         
+        for (let i = 0; i < rawNotes.length; i++) {
+            let current = rawNotes[i];
+            let isOverlapped = false;
+            for (let j = 0; j < rawNotes.length; j++) {
+                if (i === j) continue;
+                let other = rawNotes[j];
+                if (other.time >= current.time && other.time < (current.time + current.duration) && other.duration < current.duration) {
+                    isOverlapped = true; break;
+                }
+            }
+            if (!isOverlapped) {
+                if (finalPathNotes.length > 0) {
+                    let last = finalPathNotes[finalPathNotes.length-1];
+                    if (Math.abs(current.time - last.time) < 0.04) {
+                        if (current.duration < last.duration) finalPathNotes[finalPathNotes.length-1] = current;
+                        continue;
+                    }
+                }
+                finalPathNotes.push(current);
+            }
+        }
+
         let startX = globalStartTime * BALL_VX;
         let startY = (canvas.height * 0.3 + baseOffset);
-        steps.push({ x: startX, y: startY, w: (rawNotes[0].time - globalStartTime) * BALL_VX + 20 || 80, isNote: false, active: 0, color: '#1e293b' });
+        steps.push({ x: startX, y: startY, w: (finalPathNotes[0]?.time - globalStartTime) * BALL_VX + 10 || 50, isNote: false, active: 0, color: '#1e293b' });
 
-        rawNotes.forEach((n, i) => {
+        finalPathNotes.forEach((n, i) => {
             let x = n.time * BALL_VX;
             let y = startY + (i * 18);
             let w = Math.max(n.duration * BALL_VX, 50);
@@ -183,13 +198,15 @@ async function initPhysics() {
         });
 
         let lastStep = steps[steps.length-1];
-        let finalTargetX = globalEndTime * BALL_VX + 300;
-        steps.push({ x: lastStep.x + lastStep.w, y: lastStep.y, w: finalTargetX - (lastStep.x + lastStep.w), isNote: false, active: 0, color: '#1e293b' });
+        let finalTargetX = globalEndTime * BALL_VX + 200;
+        if (lastStep.x + lastStep.w < finalTargetX) {
+            steps.push({ x: lastStep.x + lastStep.w, y: lastStep.y, w: finalTargetX - (lastStep.x + lastStep.w), isNote: false, active: 0, color: '#1e293b' });
+        }
         
         tracks.push({ 
             steps, 
             ball: { 
-                x: startX + 5, y: steps[0].y - BALL_R - 50, vx: BALL_VX, vy: 0, 
+                x: startX + 5, y: steps[0].y - BALL_R, vx: BALL_VX, vy: 0, 
                 color: idx === 0 ? '#ff4757' : (idx===1?'#54a0ff':'#2ed573'),
                 tails: []
             }, 
@@ -197,7 +214,7 @@ async function initPhysics() {
         });
     });
 
-    camX = tracks[0].ball.x - 150; camY = tracks[0].ball.y - 100;
+    camX = tracks[0].ball.x - 150; camY = tracks[0].ball.y - 300;
 }
 
 async function enterScene() {
@@ -207,16 +224,15 @@ async function enterScene() {
     
     await initPhysics();
 
+    // 處理照片位置
     const gFiles = document.getElementById('galleryFiles').files;
     gallery = [];
-    if(tracks.length > 0) {
-        const redTrack = tracks[0];
-        for (let i = 0; i < gFiles.length; i++) {
-            const img = new Image(); img.src = URL.createObjectURL(gFiles[i]);
-            await new Promise(r => img.onload = r);
-            const stepIdx = Math.floor((i / (gFiles.length || 1)) * redTrack.steps.length);
-            gallery.push({ img, x: redTrack.steps[stepIdx].x, y: redTrack.steps[stepIdx].y + ((i%2===0?-1:1) * 180) - 100, w: 160, h: 160 * (img.height/img.width), rot: (Math.random()-0.5)*0.2 });
-        }
+    const redTrack = tracks[0];
+    for (let i = 0; i < gFiles.length; i++) {
+        const img = new Image(); img.src = URL.createObjectURL(gFiles[i]);
+        await new Promise(r => img.onload = r);
+        const stepIdx = Math.floor((i / (gFiles.length || 1)) * redTrack.steps.length);
+        gallery.push({ img, x: redTrack.steps[stepIdx].x, y: redTrack.steps[stepIdx].y + ((i%2===0?-1:1) * 180) - 100, w: 160, h: 160 * (img.height/img.width), rot: (Math.random()-0.5)*0.2 });
     }
 
     document.getElementById('setupPanel').style.display = 'none';
@@ -227,23 +243,19 @@ async function enterScene() {
 
 function startApp() {
     if (audioCtx.state === 'suspended') audioCtx.resume();
-    isBallMoving = true; isPaused = false; showEndScreen = false;
+    isBallMoving = true; isPaused = false;
     document.getElementById('startBtn').innerText = "播放中";
     document.getElementById('uiPanel').classList.add('collapsed');
 }
 
+// 輪替聲部功能
 async function cycleTracks() {
     trackOffset++;
-    localStorage.setItem('whiteSixTrackOffset', trackOffset);
     isBallMoving = false;
+    document.getElementById('startBtn').innerText = "開始播放";
     await initPhysics();
-    isBallMoving = true;
-    document.getElementById('uiPanel').classList.add('collapsed');
-}
-
-function resetAllSettings() {
-    localStorage.removeItem('whiteSixTrackOffset');
-    location.reload();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    isBallMoving = true; // 切換後自動開始
 }
 
 function togglePause() {
@@ -255,7 +267,6 @@ function loop() {
     if (!isRunning) return;
     const dt = 1/60;
     if (isBallMoving && !isPaused) {
-        let allStopped = true;
         tracks.forEach(t => {
             const b = t.ball; let prevY = b.y;
             b.vy += GRAVITY * dt; b.x += b.vx * dt; b.y += b.vy * dt;
@@ -272,23 +283,12 @@ function loop() {
             if (!onNote) b.tails.push({ x: b.x, y: b.y, r: BALL_R, opacity: 1 });
             b.tails.forEach(p => { p.opacity -= 0.05; p.r *= 0.94; });
             b.tails = b.tails.filter(p => p.opacity > 0);
-            
-            if (b.x > t.steps[t.steps.length-1].x + t.steps[t.steps.length-1].w - 20) {
-                b.vx = 0; b.vy = 0;
-            } else {
-                allStopped = false;
-            }
+            if (b.x > t.steps[t.steps.length-1].x + t.steps[t.steps.length-1].w - 10) { b.vx = 0; b.vy = 0; }
         });
-        
         const mb = tracks[0].ball;
         camX += (mb.x - canvas.width * 0.22 - camX) * 0.1;
         camY += (mb.y - canvas.height * 0.45 - camY) * 0.05;
-
-        // 雙重保險：停止且 X 座標必須遠離起點
-        if (allStopped && mb.x > 500) {
-            isBallMoving = false;
-            showEndScreen = true;
-        }
+        if (tracks.every(t => t.ball.vx === 0)) isBallMoving = false;
     }
     draw();
     requestAnimationFrame(loop);
@@ -354,11 +354,10 @@ function draw() {
     });
     ctx.restore();
 
-    if (showEndScreen) {
+    if (!isBallMoving && camX > 500) {
         ctx.fillStyle = "rgba(0,0,0,0.85)"; ctx.fillRect(0,0,canvas.width,canvas.height);
         ctx.fillStyle = "#fff"; ctx.font = "bold 32px sans-serif"; ctx.textAlign = "center";
         ctx.fillText(currentMsg, canvas.width/2, canvas.height/2);
-        const cornerImg = new Image(); cornerImg.src = 'IMG_6604.png';
         if(cornerImg.complete) ctx.drawImage(cornerImg, canvas.width-150, canvas.height-170, 110, 110);
     }
 }
