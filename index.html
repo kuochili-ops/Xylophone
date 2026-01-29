@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>木琴工坊 - 穩定交互版</title>
+    <title>木琴工坊 - 介面優化版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --danger: #ef4444; --success: #10b981; }
@@ -12,9 +12,11 @@
         /* 初始設置面板 */
         #setupPanel { position: fixed; inset: 0; background: #020617; z-index: 9999; padding: 20px; display: flex; flex-direction: column; align-items: center; overflow-y: auto; }
         .config-card { background: rgba(15, 23, 42, 0.98); padding: 25px; border-radius: 24px; border: 1px solid #334155; width: 90%; max-width: 420px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
+        .input-group { margin-bottom: 20px; }
+        .input-group label { display: block; margin-bottom: 8px; font-size: 14px; color: #94a3b8; font-weight: bold; }
         
-        /* 演奏中操作面板 (修正 z-index 確保永遠可點擊) */
-        #uiPanel { position: fixed; bottom: 30px; right: 20px; z-index: 10000; display: flex; flex-direction: column; align-items: flex-end; }
+        /* 播放畫面專用操作面板 */
+        #uiPanel { position: fixed; bottom: 30px; right: 20px; z-index: 10000; display: none; flex-direction: column; align-items: flex-end; }
         .panel-content { 
             background: rgba(15, 23, 42, 0.9); padding: 12px; border-radius: 20px; border: 1px solid #475569; 
             display: flex; gap: 10px; backdrop-filter: blur(20px); box-shadow: 0 10px 30px rgba(0,0,0,0.5);
@@ -26,18 +28,17 @@
         .toggle-btn { 
             width: 56px; height: 56px; border-radius: 50%; background: #1e293b; border: 2px solid #475569; 
             color: white; font-size: 24px; cursor: pointer; display: flex; align-items: center; justify-content: center;
-            margin-top: 10px; transition: background 0.2s; -webkit-tap-highlight-color: transparent;
+            margin-top: 10px; -webkit-tap-highlight-color: transparent;
         }
-        .toggle-btn:active { background: #334155; }
 
         .action-btn { padding: 12px 18px; border-radius: 12px; border: none; font-weight: bold; color: white; cursor: pointer; font-size: 14px; }
         #startBtn { background: var(--success); }
         #pauseBtn { background: #64748b; }
         #resetBtn { background: var(--danger); }
 
-        input[type="file"], input[type="text"] { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #334155; background: #0f172a; color: #fff; margin-bottom: 12px; box-sizing: border-box; }
-        .primary-btn { width: 100%; padding: 16px; border-radius: 14px; background: var(--accent); color: white; border: none; font-weight: bold; cursor: pointer; }
-        #photoPreview { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 12px 0; }
+        input[type="file"], input[type="text"] { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #334155; background: #0f172a; color: #fff; box-sizing: border-box; }
+        .primary-btn { width: 100%; padding: 16px; border-radius: 14px; background: var(--accent); color: white; border: none; font-weight: bold; cursor: pointer; font-size: 16px; }
+        #photoPreview { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 10px; }
         .photo-thumb { aspect-ratio: 1; background: #1e293b; border-radius: 6px; overflow: hidden; }
     </style>
 </head>
@@ -45,17 +46,30 @@
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="text-align:center; margin-top:0; color:var(--accent);">🎹 木琴工坊</h2>
-        <p style="font-size:13px; color:#94a3b8; text-align:center;">支援同音同色、短音優先與彗星拖尾</p>
-        <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleMidi(this)">
-        <input type="file" id="galleryFiles" multiple accept="image/*" onchange="previewImages(this)">
-        <div id="photoPreview"></div>
-        <input type="text" id="msgInit" value="The Comet Trail.">
-        <button id="entryBtn" class="primary-btn" onclick="enterScene()" disabled>進入場景</button>
+        <h2 style="text-align:center; margin-top:0; color:var(--accent);">🎹 木琴工坊設定</h2>
+        
+        <div class="input-group">
+            <label>1. 上傳 MIDI 音樂檔 (選填，未傳則用預設值)</label>
+            <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleMidi(this)">
+        </div>
+
+        <div class="input-group">
+            <label>2. 上傳多張背景照片</label>
+            <input type="file" id="galleryFiles" multiple accept="image/*" onchange="previewImages(this)">
+            <div id="photoPreview"></div>
+        </div>
+
+        <div class="input-group">
+            <label>3. 結束畫面訊息</label>
+            <input type="text" id="msgInit" value="The Grand Finale.">
+        </div>
+
+        <button id="entryBtn" class="primary-btn" onclick="enterScene()">進入播放場景</button>
     </div>
 </div>
 
-<div id="uiPanel" class=""> <div class="panel-content">
+<div id="uiPanel">
+    <div class="panel-content">
         <button id="startBtn" class="action-btn" onclick="startApp()">開始播放</button>
         <button id="pauseBtn" class="action-btn" onclick="togglePause()">暫停</button>
         <button id="resetBtn" class="action-btn" onclick="location.reload()">重新設定</button>
@@ -79,13 +93,24 @@ function getNoteColor(midi) {
     return `hsla(${hue}, 80%, 65%, 0.85)`;
 }
 
+// 預設 MIDI 數據 (如果使用者沒上傳)
+const defaultMidi = {
+    tracks: [{
+        notes: [
+            {time: 0.5, duration: 0.5, midi: 60}, {time: 1.0, duration: 0.5, midi: 62},
+            {time: 1.5, duration: 0.5, midi: 64}, {time: 2.0, duration: 0.5, midi: 65},
+            {time: 2.5, duration: 0.5, midi: 67}, {time: 3.0, duration: 0.5, midi: 69},
+            {time: 3.5, duration: 1.0, midi: 71}, {time: 4.5, duration: 1.0, midi: 72}
+        ]
+    }]
+};
+
 canvas.width = window.innerWidth; canvas.height = window.innerHeight;
 
 function handleMidi(input) {
     if(input.files[0]) {
         input.files[0].arrayBuffer().then(buf => {
             midiData = new Midi(buf);
-            document.getElementById('entryBtn').disabled = false;
         });
     }
 }
@@ -103,7 +128,10 @@ function previewImages(input) {
 async function enterScene() {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     currentMsg = document.getElementById('msgInit').value;
-    const sorted = [...midiData.tracks].sort((a,b) => b.notes.length - a.notes.length).slice(0, 3);
+    
+    // 如果沒上傳 MIDI，使用預設值
+    const activeMidi = midiData || defaultMidi;
+    const sorted = [...activeMidi.tracks].sort((a,b) => b.notes.length - a.notes.length).slice(0, 3);
     
     let globalStartTime = Math.min(...sorted.map(t => t.notes[0]?.time || 0));
     let globalEndTime = Math.max(...sorted.map(t => t.notes[t.notes.length-1].time + t.notes[t.notes.length-1].duration));
@@ -114,6 +142,7 @@ async function enterScene() {
         let rawNotes = track.notes.sort((a,b) => a.time - b.time);
         let finalPathNotes = [];
         
+        // 短音優先演算法
         for (let i = 0; i < rawNotes.length; i++) {
             let current = rawNotes[i];
             let isOverlappedByShorter = false;
@@ -178,6 +207,7 @@ async function enterScene() {
     }
 
     document.getElementById('setupPanel').style.display = 'none';
+    document.getElementById('uiPanel').style.display = 'flex'; // 顯示播放操作面板
     camX = tracks[0].ball.x - 150; camY = tracks[0].ball.y - 300;
     initStars();
     isRunning = true; requestAnimationFrame(loop);
@@ -192,7 +222,7 @@ function startApp() {
     if (audioCtx.state === 'suspended') audioCtx.resume();
     isBallMoving = true;
     isPaused = false;
-    document.getElementById('startBtn').innerText = "播放中...";
+    document.getElementById('startBtn').innerText = "播放中";
     document.getElementById('uiPanel').classList.add('collapsed');
 }
 
