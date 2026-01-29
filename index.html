@@ -73,7 +73,7 @@ const GRAVITY = 3200, BALL_VX = 400, BOUNCE_UP = -22, BALL_R = 12;
 // 預載入預設曲目 (酒後的心聲.MID)
 async function loadDefaultMidi() {
     try {
-        const response = await fetch('酒後的心聲.mid');
+        const response = await fetch('b3501.mid');
         const buf = await response.arrayBuffer();
         midiData = new Midi(buf);
         console.log("預設曲目：酒後的心聲 已就緒");
