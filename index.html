@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>𓃥白六木琴工坊 - 啟動修正版</title>
+    <title>𓃥白六木琴工坊 - 強制啟動版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --success: #10b981; }
@@ -13,44 +13,49 @@
         .input-group { margin-bottom: 20px; }
         .input-group label { display: block; margin-bottom: 8px; font-size: 14px; color: #94a3b8; font-weight: bold; }
         select, input[type="file"], input[type="text"] { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #334155; background: #0f172a; color: #fff; font-size: 14px; box-sizing: border-box; }
-        #uiPanel { position: fixed; bottom: 30px; right: 20px; z-index: 10000; display: none; flex-direction: column; align-items: flex-end; }
-        .panel-content { background: rgba(15, 23, 42, 0.9); padding: 12px; border-radius: 20px; border: 1px solid #475569; display: flex; gap: 10px; backdrop-filter: blur(20px); }
-        .toggle-btn { width: 56px; height: 56px; border-radius: 50%; background: #1e293b; border: 2px solid #475569; color: white; font-size: 24px; cursor: pointer; margin-top: 10px; }
-        .action-btn { padding: 12px 18px; border-radius: 12px; border: none; font-weight: bold; color: white; cursor: pointer; }
-        .primary-btn { width: 100%; padding: 16px; border-radius: 14px; background: var(--accent); color: white; border: none; font-weight: bold; cursor: pointer; }
-        #photoPreview { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 10px; }
-        .photo-thumb { aspect-ratio: 1; background: #1e293b; border-radius: 6px; object-fit: cover; width: 100%; }
-        .status-msg { font-size: 12px; margin-top: 5px; color: var(--success); }
+        
+        /* 懸浮播放按鈕 */
+        #playOverlay { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 10001; display: none; }
+        .big-start-btn { padding: 15px 40px; border-radius: 50px; background: var(--success); color: white; border: none; font-size: 20px; font-weight: bold; cursor: pointer; box-shadow: 0 0 20px rgba(16, 185, 129, 0.5); }
+        
+        #uiPanel { position: fixed; bottom: 30px; right: 20px; z-index: 10000; display: none; }
+        .toggle-btn { width: 56px; height: 56px; border-radius: 50%; background: #1e293b; border: 2px solid #475569; color: white; font-size: 24px; cursor: pointer; }
+        
+        #stage { display: block; width: 100vw; height: 100vh; }
     </style>
 </head>
 <body>
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="text-align:center; margin-top:0; color:var(--accent);">🎹 啟動修正版</h2>
+        <h2 style="text-align:center; color:var(--accent);">🎹 修正：點擊即滾動</h2>
         <div class="input-group">
-            <label>1. 選擇預設曲目</label>
+            <label>1. 選擇曲目</label>
             <select id="midiSelect" onchange="changeDefaultMidi(this.value)">
                 <option value="b3501.mid">b3501.mid</option>
                 <option value="kaze.mid">kaze.mid</option>
                 <option value="Mario Bros. - Super Mario Bros. Theme.mid">Super Mario Bros.</option>
-                <option value="custom" disabled>--- 或手動上傳 ---</option>
             </select>
         </div>
-        <div class="input-group"><label>或者：上傳自訂 MIDI</label><input type="file" id="midiFile" accept=".mid,.midi" onchange="handleManualUpload(this)"><div id="midiStatus" class="status-msg">等待選取...</div></div>
-        <div class="input-group"><label>2. 上傳背景照片 (多選)</label><input type="file" id="galleryFiles" multiple accept="image/*" onchange="previewImages(this)"><div id="photoPreview"></div></div>
-        <div class="input-group"><label>3. 結束訊息</label><input type="text" id="msgInit" value="演出結束"></div>
-        <button class="primary-btn" onclick="enterScene()">進入場景</button>
+        <div class="input-group">
+            <label>或者：自行上傳</label>
+            <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleManualUpload(this)">
+            <div id="midiStatus" style="font-size:12px; color:var(--success); margin-top:5px;">預設：b3501.mid</div>
+        </div>
+        <div class="input-group">
+            <label>2. 結束訊息</label>
+            <input type="text" id="msgInit" value="演出結束，謝謝觀賞">
+        </div>
+        <button style="width:100%; padding:16px; border-radius:14px; background:var(--accent); color:white; border:none; font-weight:bold; cursor:pointer;" onclick="enterScene()">進入場景</button>
     </div>
 </div>
 
+<div id="playOverlay">
+    <button class="big-start-btn" onclick="startApp()">▶ 點我開始滾動</button>
+</div>
+
 <div id="uiPanel">
-    <div class="panel-content">
-        <button id="startBtn" class="action-btn" style="background:var(--success)" onclick="startApp()">開始播放</button>
-        <button class="action-btn" style="background:#64748b" onclick="togglePause()">暫停</button>
-        <button class="action-btn" style="background:#ef4444" onclick="location.reload()">重新</button>
-    </div>
-    <button class="toggle-btn" onclick="document.getElementById('uiPanel').classList.toggle('collapsed')">⚙️</button>
+    <button class="toggle-btn" onclick="location.reload()">🔄</button>
 </div>
 
 <canvas id="stage"></canvas>
@@ -58,211 +63,135 @@
 <script>
 const canvas = document.getElementById('stage');
 const ctx = canvas.getContext('2d', { alpha: false });
-let audioCtx, tracks = [], isRunning = false, isBallMoving = false, isPaused = false, gallery = [], stars = [];
+let audioCtx, tracks = [], isRunning = false, isBallMoving = false, isPaused = false, stars = [];
 let camX = 0, camY = 0, midiData = null, currentMsg = "";
-const cornerImg = new Image(); cornerImg.src = 'IMG_6604.png';
 
-const GRAVITY = 3200, BALL_VX = 400, BOUNCE_UP = -22, BALL_R = 12;
-
-function getNoteColor(midi) { return `hsla(${(midi % 12) * 30}, 80%, 65%, 0.85)`; }
+const GRAVITY = 3200, BALL_VX = 420, BOUNCE_UP = -24, BALL_R = 12;
 
 async function loadServerMidi(filename) {
-    try {
-        const response = await fetch(filename);
-        if (response.ok) {
-            const buf = await response.arrayBuffer();
-            midiData = new Midi(buf);
-            document.getElementById('midiStatus').innerText = `✅ 已就緒: ${filename}`;
-        }
-    } catch (e) { console.error(e); }
+    const response = await fetch(filename);
+    const buf = await response.arrayBuffer();
+    midiData = new Midi(buf);
+    document.getElementById('midiStatus').innerText = `✅ 已讀取: ${filename}`;
 }
 loadServerMidi('b3501.mid');
 
-function changeDefaultMidi(val) { if(val !== "custom") loadServerMidi(val); }
+function changeDefaultMidi(val) { loadServerMidi(val); }
 function handleManualUpload(input) {
     if(input.files[0]) {
         input.files[0].arrayBuffer().then(buf => {
             midiData = new Midi(buf);
             document.getElementById('midiStatus').innerText = "✅ 已上傳：" + input.files[0].name;
-            document.getElementById('midiSelect').value = "custom";
         });
     }
 }
 
-function previewImages(input) {
-    const container = document.getElementById('photoPreview'); container.innerHTML = "";
-    Array.from(input.files).slice(0, 20).forEach(file => {
-        const img = document.createElement('img'); img.src = URL.createObjectURL(file);
-        img.className = 'photo-thumb'; container.appendChild(img);
-    });
-}
-
 async function enterScene() {
-    if(!midiData) { alert("MIDI 尚未載入完成"); return; }
+    if(!midiData) return;
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     currentMsg = document.getElementById('msgInit').value;
     
-    tracks = []; gallery = [];
+    tracks = [];
     const sorted = [...midiData.tracks].sort((a,b) => b.notes.length - a.notes.length).slice(0, 3);
     
     sorted.forEach((track, idx) => {
         const steps = [];
-        const baseOffset = idx * 240;
-        let finalPathNotes = track.notes.sort((a,b) => a.time - b.time);
+        const baseOffset = idx * 250;
+        let notes = track.notes.sort((a,b) => a.time - b.time);
 
-        // 建立起始跑道 (加長到 300，確保球不會掉下去)
-        let startX = 0;
-        let startY = (canvas.height * 0.25 + baseOffset);
-        steps.push({ x: startX, y: startY, w: 300, isNote: false, active: 0, color: '#1e293b' });
+        // 緩衝起始台
+        steps.push({ x: 0, y: (canvas.height*0.3 + baseOffset), w: 400, isNote: false, active: 0, color: '#1e293b' });
 
-        finalPathNotes.forEach((n, i) => {
-            let x = n.time * BALL_VX + 300; // 整體向後偏移跑道長度
-            let y = startY + (i % 2 === 0 ? 0 : 20);
-            let w = Math.max(n.duration * BALL_VX, 70); 
+        notes.forEach((n, i) => {
+            let x = n.time * BALL_VX + 400;
+            let y = (canvas.height*0.3 + baseOffset) + (i % 2 === 0 ? 0 : 20);
+            let w = Math.max(n.duration * BALL_VX, 80);
             
             let prev = steps[steps.length-1];
-            if (x > prev.x + prev.w) { prev.w = (x - prev.x) + 10; } // 自動接合跑道
+            if (x > prev.x + prev.w) { prev.w = (x - prev.x) + 10; }
 
-            steps.push({ 
-                x, y, w, 
-                freq: 440 * Math.pow(2, (n.midi - 69) / 12), 
-                isNote: true, active: 0, color: getNoteColor(n.midi) 
-            });
+            steps.push({ x, y, w, freq: 440 * Math.pow(2, (n.midi-69)/12), isNote: true, active: 0, color: `hsla(${(n.midi%12)*30}, 70%, 60%, 0.8)` });
         });
 
-        // 強制讓球初始化在跑道起點上方
         tracks.push({ 
             steps, 
-            ball: { 
-                x: steps[0].x + 20, 
-                y: steps[0].y - BALL_R - 5, 
-                vx: BALL_VX, vy: 0, 
-                color: idx === 0 ? '#ff4757' : (idx===1?'#54a0ff':'#2ed573'), 
-                tails: [] 
-            }, 
+            ball: { x: 50, y: steps[0].y - 50, vx: BALL_VX, vy: 0, color: ['#ff4757','#54a0ff','#2ed573'][idx], tails: [] }, 
             cur: 0 
         });
     });
 
-    // 照片排版優化
-    const gFiles = document.getElementById('galleryFiles').files;
-    for (let i = 0; i < gFiles.length; i++) {
-        const img = new Image(); img.src = URL.createObjectURL(gFiles[i]);
-        await new Promise(r => img.onload = r);
-        gallery.push({ img, x: (i*1500) + 600, y: 100 + Math.random()*200, w: 250, h: 250*(img.height/img.width), rot: (Math.random()-0.5)*0.2 });
-    }
-
     document.getElementById('setupPanel').style.display = 'none';
-    document.getElementById('uiPanel').style.display = 'flex';
+    document.getElementById('playOverlay').style.display = 'block';
+    isRunning = true;
     initStars();
-    isRunning = true; 
-    
-    // 初始化攝影機位置
-    camX = 0; 
-    camY = tracks[0].ball.y - canvas.height/2 + 100;
-    
     requestAnimationFrame(loop);
 }
 
 function startApp() {
     if (audioCtx.state === 'suspended') audioCtx.resume();
-    isBallMoving = true; // 關鍵：啟動滾動
-    isPaused = false;
-    document.getElementById('uiPanel').classList.add('collapsed');
+    isBallMoving = true;
+    document.getElementById('playOverlay').style.display = 'none';
+    document.getElementById('uiPanel').style.display = 'block';
 }
-
-function togglePause() { isPaused = !isPaused; }
 
 function loop() {
     if (!isRunning) return;
     const dt = 1/60;
     
-    if (isBallMoving && !isPaused) {
+    if (isBallMoving) {
         tracks.forEach(t => {
             const b = t.ball;
-            const nextX = b.x + b.vx * dt;
-            const nextY = b.y + b.vy * dt + 0.5 * GRAVITY * dt * dt;
+            b.vy += GRAVITY * dt;
+            b.x += b.vx * dt;
+            b.y += b.vy * dt;
             
-            let collided = false;
+            let onGround = false;
             for (let i = t.cur; i < Math.min(t.cur + 20, t.steps.length); i++) {
                 let s = t.steps[i];
-                if (nextX >= s.x && nextX <= s.x + s.w) {
-                    if (b.y + BALL_R <= s.y + 15 && nextY + BALL_R >= s.y) {
-                        b.y = s.y - BALL_R;
-                        b.vy = BOUNCE_UP;
-                        t.cur = i;
-                        if(!s.active && s.isNote) hitStep(s);
-                        collided = true; break;
-                    }
+                if (b.x >= s.x && b.x <= s.x + s.w && b.y + BALL_R >= s.y && b.y < s.y + 20) {
+                    b.y = s.y - BALL_R;
+                    b.vy = BOUNCE_UP;
+                    t.cur = i;
+                    if(!s.active && s.isNote) playSound(s);
+                    onGround = true; break;
                 }
             }
-
-            if (!collided) {
-                b.x = nextX; b.y = nextY; b.vy += GRAVITY * dt;
-            }
-
-            b.tails.push({ x: b.x, y: b.y, r: BALL_R, opacity: 0.6 });
-            if(b.tails.length > 15) b.tails.shift();
-            if (b.x > t.steps[t.steps.length-1].x + 800) { b.vx = 0; }
+            b.tails.push({x: b.x, y: b.y}); if(b.tails.length > 10) b.tails.shift();
         });
 
-        const mb = tracks[0].ball;
-        camX += (mb.x - canvas.width * 0.25 - camX) * 0.1;
-        camY += (mb.y - canvas.height * 0.5 - camY) * 0.05;
+        camX += (tracks[0].ball.x - canvas.width * 0.2 - camX) * 0.1;
+        camY += (tracks[0].ball.y - canvas.height * 0.5 - camY) * 0.05;
     }
     draw();
     requestAnimationFrame(loop);
 }
 
-function hitStep(s) {
+function playSound(s) {
     s.active = 1;
     const osc = audioCtx.createOscillator(); const g = audioCtx.createGain();
-    osc.type = 'triangle'; osc.frequency.setValueAtTime(s.freq, audioCtx.currentTime);
-    g.gain.setValueAtTime(0.15, audioCtx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
+    osc.type = 'triangle'; osc.frequency.value = s.freq;
+    g.gain.setValueAtTime(0.1, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
     osc.connect(g); g.connect(audioCtx.destination);
-    osc.start(); osc.stop(audioCtx.currentTime + 0.4);
+    osc.start(); osc.stop(audioCtx.currentTime + 0.3);
 }
 
-function initStars() {
-    stars = [];
-    for(let i=0; i<100; i++) stars.push({ x: Math.random()*canvas.width, y: Math.random()*canvas.height, size: Math.random()*2 });
-}
+function initStars() { stars = Array.from({length:80}, () => ({x: Math.random()*canvas.width, y: Math.random()*canvas.height})); }
 
 function draw() {
-    ctx.fillStyle = "#010409"; ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.save();
-    ctx.translate(-camX, -camY);
-
-    gallery.forEach(p => {
-        ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
-        ctx.fillStyle = "#fff"; ctx.fillRect(-6,-6,p.w+12,p.h+12);
-        ctx.drawImage(p.img, 0, 0, p.w, p.h);
-        ctx.restore();
-    });
-
+    ctx.fillStyle = "#010409"; ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.save(); ctx.translate(-camX, -camY);
     tracks.forEach(t => {
         t.steps.forEach(s => {
             ctx.fillStyle = s.active ? "#fff" : s.color;
-            if(s.active) { ctx.shadowBlur = 20; ctx.shadowColor = "#fff"; }
-            ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, 18, 9); ctx.fill();
-            ctx.shadowBlur = 0;
+            ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, 15, 8); ctx.fill();
         });
-        const b = t.ball;
-        b.tails.forEach((p,i) => {
-            ctx.globalAlpha = i/15; ctx.fillStyle = b.color;
-            ctx.beginPath(); ctx.arc(p.x, p.y, BALL_R * (i/15), 0, Math.PI*2); ctx.fill();
-        });
-        ctx.globalAlpha = 1; ctx.fillStyle = b.color;
-        ctx.beginPath(); ctx.arc(b.x, b.y, BALL_R, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = t.ball.color;
+        ctx.beginPath(); ctx.arc(t.ball.x, t.ball.y, BALL_R, 0, Math.PI*2); ctx.fill();
     });
     ctx.restore();
-
-    if (isBallMoving && tracks[0].ball.vx === 0 && camX > 500) {
-        ctx.fillStyle = "rgba(0,0,0,0.8)"; ctx.fillRect(0,0,canvas.width,canvas.height);
-        ctx.fillStyle = "#fff"; ctx.font = "bold 40px sans-serif"; ctx.textAlign = "center";
-        ctx.fillText(currentMsg, canvas.width/2, canvas.height/2);
-        if(cornerImg.complete) ctx.drawImage(cornerImg, canvas.width-150, canvas.height-170, 110, 110);
+    if (!isBallMoving && isRunning) {
+        ctx.fillStyle = "rgba(255,255,255,0.5)"; ctx.textAlign="center"; ctx.fillText("等待啟動...", canvas.width/2, canvas.height/2 + 100);
     }
 }
 canvas.width = window.innerWidth; canvas.height = window.innerHeight;
