@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>木琴工坊 - 短音節奏優先</title>
+    <title>木琴工坊 - 彗星長廊版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; }
@@ -26,11 +26,11 @@
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="text-align:center; margin-top:0; color:var(--accent);">🎹 木琴工坊 - 節奏優化</h2>
+        <h2 style="text-align:center; margin-top:0; color:var(--accent);">🎹 木琴工坊 - 彗星模式</h2>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleMidi(this)">
         <input type="file" id="galleryFiles" multiple accept="image/*" onchange="previewImages(this)">
         <div id="photoPreview"></div>
-        <input type="text" id="msgInit" value="Rhythmic Perfection">
+        <input type="text" id="msgInit" value="Starry Rhythms.">
         <button id="entryBtn" class="primary-btn" onclick="enterScene()" disabled>生成場景</button>
     </div>
 </div>
@@ -56,7 +56,7 @@ const GRAVITY = 3200, BALL_VX = 400, BOUNCE_UP = -22, BALL_R = 12;
 
 function getNoteColor(midi) {
     const hue = (midi % 12) * 30;
-    return `hsla(${hue}, 75%, 65%, 0.85)`;
+    return `hsla(${hue}, 80%, 65%, 0.85)`;
 }
 
 canvas.width = window.innerWidth; canvas.height = window.innerHeight;
@@ -92,30 +92,20 @@ async function enterScene() {
         const steps = [];
         const baseOffset = idx * 220;
         
-        // --- 核心優化：捨長取短路徑演算法 ---
         let rawNotes = track.notes.sort((a,b) => a.time - b.time);
         let finalPathNotes = [];
         
         for (let i = 0; i < rawNotes.length; i++) {
             let current = rawNotes[i];
             let isOverlappedByShorter = false;
-            
-            // 檢查後續是否有更短的音符在同一個起始點或其涵蓋範圍內
             for (let j = 0; j < rawNotes.length; j++) {
                 if (i === j) continue;
                 let other = rawNotes[j];
-                // 如果當前音符比較長，且另一個音符在它的時間範圍內且比它短
-                if (other.time >= current.time && 
-                    other.time < (current.time + current.duration) && 
-                    other.duration < current.duration) {
-                    isOverlappedByShorter = true;
-                    break;
+                if (other.time >= current.time && other.time < (current.time + current.duration) && other.duration < current.duration) {
+                    isOverlappedByShorter = true; break;
                 }
             }
-            
-            // 如果這個音符沒有被更短的音覆蓋，或者它本身就是短音，則加入路徑
             if (!isOverlappedByShorter) {
-                // 防止同時間點完全重疊
                 if (finalPathNotes.length > 0) {
                     let last = finalPathNotes[finalPathNotes.length-1];
                     if (Math.abs(current.time - last.time) < 0.04) {
@@ -129,7 +119,7 @@ async function enterScene() {
 
         let startX = globalStartTime * BALL_VX;
         let startY = (canvas.height * 0.3 + baseOffset);
-        steps.push({ x: startX, y: startY, w: (finalPathNotes[0].time - globalStartTime) * BALL_VX + 10, isNote: false, active: 0, color: '#334155' });
+        steps.push({ x: startX, y: startY, w: (finalPathNotes[0].time - globalStartTime) * BALL_VX + 10, isNote: false, active: 0, color: '#1e293b' });
 
         finalPathNotes.forEach((n, i) => {
             let x = n.time * BALL_VX;
@@ -145,10 +135,18 @@ async function enterScene() {
         let lastStep = steps[steps.length-1];
         let finalTargetX = globalEndTime * BALL_VX + 200;
         if (lastStep.x + lastStep.w < finalTargetX) {
-            steps.push({ x: lastStep.x + lastStep.w, y: lastStep.y, w: finalTargetX - (lastStep.x + lastStep.w), isNote: false, active: 0, color: '#334155' });
+            steps.push({ x: lastStep.x + lastStep.w, y: lastStep.y, w: finalTargetX - (lastStep.x + lastStep.w), isNote: false, active: 0, color: '#1e293b' });
         }
         
-        tracks.push({ steps, ball: { x: startX + 5, y: steps[0].y - BALL_R, vx: BALL_VX, vy: 0, color: idx === 0 ? '#ff4757' : (idx===1?'#54a0ff':'#2ed573') }, cur: 0 });
+        tracks.push({ 
+            steps, 
+            ball: { 
+                x: startX + 5, y: steps[0].y - BALL_R, vx: BALL_VX, vy: 0, 
+                color: idx === 0 ? '#ff4757' : (idx===1?'#54a0ff':'#2ed573'),
+                tails: [] // 拖尾粒子緩存
+            }, 
+            cur: 0 
+        });
     });
 
     const gFiles = document.getElementById('galleryFiles').files;
@@ -186,14 +184,27 @@ function loop() {
         tracks.forEach(t => {
             const b = t.ball; let prevY = b.y;
             b.vy += GRAVITY * dt; b.x += b.vx * dt; b.y += b.vy * dt;
+            
+            let onNoteStep = false;
             for (let i = t.cur; i < Math.min(t.cur + 15, t.steps.length); i++) {
                 let s = t.steps[i];
                 if (b.x >= s.x && b.x <= s.x + s.w && prevY + BALL_R <= s.y + 15 && b.y + BALL_R >= s.y) {
                     b.y = s.y - BALL_R; b.vy = BOUNCE_UP; t.cur = i;
                     if(!s.active && s.isNote) hitStep(s);
+                    if(s.isNote) onNoteStep = true;
                     break;
                 }
             }
+
+            // --- 彗星狀態邏輯 ---
+            // 如果球不在有音符的音板上（走隱藏路徑或空檔），產生彗星粒子
+            if (!onNoteStep) {
+                b.tails.push({ x: b.x, y: b.y, r: BALL_R, opacity: 1 });
+            }
+            // 更新粒子狀態
+            b.tails.forEach(p => { p.opacity -= 0.05; p.r *= 0.94; });
+            b.tails = b.tails.filter(p => p.opacity > 0);
+
             if (b.x > t.steps[t.steps.length-1].x + t.steps[t.steps.length-1].w - 10) { b.vx = 0; b.vy = 0; }
         });
         const mb = tracks[0].ball;
@@ -251,8 +262,20 @@ function draw() {
                 ctx.shadowBlur = 0;
             }
         });
-        ctx.fillStyle = t.ball.color;
-        ctx.beginPath(); ctx.arc(t.ball.x, t.ball.y, BALL_R, 0, Math.PI*2); ctx.fill();
+
+        // 繪製彗星拖尾
+        const b = t.ball;
+        b.tails.forEach(p => {
+            ctx.fillStyle = b.color;
+            ctx.globalAlpha = p.opacity * 0.5;
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
+        });
+        ctx.globalAlpha = 1.0;
+
+        ctx.fillStyle = b.color;
+        ctx.shadowBlur = 10; ctx.shadowColor = b.color;
+        ctx.beginPath(); ctx.arc(b.x, b.y, BALL_R, 0, Math.PI*2); ctx.fill();
+        ctx.shadowBlur = 0;
     });
     ctx.restore();
 
