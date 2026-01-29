@@ -3,57 +3,42 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>木琴工坊 - 專業錄製版</title>
+    <title>木琴工坊 - 短音節奏優先</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; }
         body { margin: 0; background: #010409; color: #fff; font-family: -apple-system, sans-serif; overflow: hidden; touch-action: none; }
-        
-        /* 設置面板 */
         #setupPanel { position: fixed; inset: 0; background: #020617; z-index: 5000; padding: 20px; display: flex; flex-direction: column; align-items: center; overflow-y: auto; }
         .config-card { background: rgba(15, 23, 42, 0.98); padding: 25px; border-radius: 24px; border: 1px solid #334155; width: 90%; max-width: 420px; }
-        
-        /* 側邊收合介面 */
         #uiPanel { position: fixed; bottom: 30px; right: 20px; z-index: 1000; display: flex; flex-direction: column; align-items: flex-end; transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
-        .panel-content { 
-            background: rgba(15, 23, 42, 0.85); padding: 12px; border-radius: 20px; border: 1px solid #475569; 
-            display: flex; gap: 10px; backdrop-filter: blur(15px); box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-            transition: all 0.4s; transform-origin: right bottom;
-        }
+        .panel-content { background: rgba(15, 23, 42, 0.85); padding: 12px; border-radius: 20px; border: 1px solid #475569; display: flex; gap: 10px; backdrop-filter: blur(15px); }
         #uiPanel.collapsed .panel-content { opacity: 0; transform: scale(0.5) translateY(50px); pointer-events: none; }
-        
-        .toggle-btn { 
-            width: 50px; height: 50px; border-radius: 50%; background: #1e293b; border: 2px solid #475569; 
-            color: white; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center;
-            margin-top: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-        }
-
+        .toggle-btn { width: 50px; height: 50px; border-radius: 50%; background: #1e293b; border: 2px solid #475569; color: white; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; margin-top: 10px; }
         .action-btn { padding: 10px 20px; border-radius: 12px; border: none; font-weight: bold; color: white; cursor: pointer; }
         #startBtn { background: #10b981; }
         input[type="file"], input[type="text"] { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #334155; background: #0f172a; color: #fff; margin-bottom: 12px; box-sizing: border-box; }
         .primary-btn { width: 100%; padding: 16px; border-radius: 14px; background: var(--accent); color: white; border: none; font-weight: bold; }
         #photoPreview { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 12px 0; }
         .photo-thumb { aspect-ratio: 1; background: #1e293b; border-radius: 6px; overflow: hidden; }
-        canvas { display: block; }
     </style>
 </head>
 <body>
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="text-align:center; margin-top:0; color:var(--accent);">🎹 木琴工坊 - 同音同色</h2>
+        <h2 style="text-align:center; margin-top:0; color:var(--accent);">🎹 木琴工坊 - 節奏優化</h2>
         <input type="file" id="midiFile" accept=".mid,.midi" onchange="handleMidi(this)">
         <input type="file" id="galleryFiles" multiple accept="image/*" onchange="previewImages(this)">
         <div id="photoPreview"></div>
-        <input type="text" id="msgInit" value="Tone-Color Harmony">
-        <button id="entryBtn" class="primary-btn" onclick="enterScene()" disabled>進入場景</button>
+        <input type="text" id="msgInit" value="Rhythmic Perfection">
+        <button id="entryBtn" class="primary-btn" onclick="enterScene()" disabled>生成場景</button>
     </div>
 </div>
 
 <div id="uiPanel">
     <div class="panel-content">
         <button id="startBtn" class="action-btn" onclick="startApp()">開始播放</button>
-        <button class="action-btn" style="background:#475569;" onclick="location.reload()">重新載入</button>
+        <button class="action-btn" style="background:#475569;" onclick="location.reload()">重設</button>
     </div>
     <button class="toggle-btn" onclick="document.getElementById('uiPanel').classList.toggle('collapsed')">☰</button>
 </div>
@@ -69,10 +54,9 @@ const cornerImg = new Image(); cornerImg.src = 'IMG_6604.png';
 
 const GRAVITY = 3200, BALL_VX = 400, BOUNCE_UP = -22, BALL_R = 12;
 
-// 音階色彩映射 (HSL 確保亮度一致)
 function getNoteColor(midi) {
-    const hue = (midi % 12) * 30; // 12音階均分 360度
-    return `hsla(${hue}, 70%, 60%, 0.8)`;
+    const hue = (midi % 12) * 30;
+    return `hsla(${hue}, 75%, 65%, 0.85)`;
 }
 
 canvas.width = window.innerWidth; canvas.height = window.innerHeight;
@@ -107,18 +91,47 @@ async function enterScene() {
     sorted.forEach((track, idx) => {
         const steps = [];
         const baseOffset = idx * 220;
-        let filtered = [];
-        let lastTime = -1;
-        track.notes.sort((a,b) => a.time - b.time).forEach(n => {
-            if (n.time > lastTime + 0.05) { filtered.push(n); lastTime = n.time; }
-            else if (n.duration < filtered[filtered.length-1].duration) { filtered[filtered.length-1] = n; }
-        });
+        
+        // --- 核心優化：捨長取短路徑演算法 ---
+        let rawNotes = track.notes.sort((a,b) => a.time - b.time);
+        let finalPathNotes = [];
+        
+        for (let i = 0; i < rawNotes.length; i++) {
+            let current = rawNotes[i];
+            let isOverlappedByShorter = false;
+            
+            // 檢查後續是否有更短的音符在同一個起始點或其涵蓋範圍內
+            for (let j = 0; j < rawNotes.length; j++) {
+                if (i === j) continue;
+                let other = rawNotes[j];
+                // 如果當前音符比較長，且另一個音符在它的時間範圍內且比它短
+                if (other.time >= current.time && 
+                    other.time < (current.time + current.duration) && 
+                    other.duration < current.duration) {
+                    isOverlappedByShorter = true;
+                    break;
+                }
+            }
+            
+            // 如果這個音符沒有被更短的音覆蓋，或者它本身就是短音，則加入路徑
+            if (!isOverlappedByShorter) {
+                // 防止同時間點完全重疊
+                if (finalPathNotes.length > 0) {
+                    let last = finalPathNotes[finalPathNotes.length-1];
+                    if (Math.abs(current.time - last.time) < 0.04) {
+                        if (current.duration < last.duration) finalPathNotes[finalPathNotes.length-1] = current;
+                        continue;
+                    }
+                }
+                finalPathNotes.push(current);
+            }
+        }
 
         let startX = globalStartTime * BALL_VX;
         let startY = (canvas.height * 0.3 + baseOffset);
-        steps.push({ x: startX, y: startY, w: (filtered[0].time - globalStartTime) * BALL_VX + 10, isNote: false, active: 0, color: '#334155' });
+        steps.push({ x: startX, y: startY, w: (finalPathNotes[0].time - globalStartTime) * BALL_VX + 10, isNote: false, active: 0, color: '#334155' });
 
-        filtered.forEach((n, i) => {
+        finalPathNotes.forEach((n, i) => {
             let x = n.time * BALL_VX;
             let y = startY + (i * 18);
             let w = Math.max(n.duration * BALL_VX, 50);
@@ -129,8 +142,8 @@ async function enterScene() {
             steps.push({ x, y, w, freq: 440*Math.pow(2,(n.midi-69)/12), isNote: true, active: 0, color: getNoteColor(n.midi) });
         });
 
-        let finalTargetX = globalEndTime * BALL_VX + 200;
         let lastStep = steps[steps.length-1];
+        let finalTargetX = globalEndTime * BALL_VX + 200;
         if (lastStep.x + lastStep.w < finalTargetX) {
             steps.push({ x: lastStep.x + lastStep.w, y: lastStep.y, w: finalTargetX - (lastStep.x + lastStep.w), isNote: false, active: 0, color: '#334155' });
         }
@@ -138,17 +151,14 @@ async function enterScene() {
         tracks.push({ steps, ball: { x: startX + 5, y: steps[0].y - BALL_R, vx: BALL_VX, vy: 0, color: idx === 0 ? '#ff4757' : (idx===1?'#54a0ff':'#2ed573') }, cur: 0 });
     });
 
-    // 照片廊道
     const gFiles = document.getElementById('galleryFiles').files;
     const redTrack = tracks[0];
-    if(gFiles.length > 0) {
-        for (let i = 0; i < gFiles.length; i++) {
-            const img = new Image(); img.src = URL.createObjectURL(gFiles[i]);
-            await new Promise(r => img.onload = r);
-            const stepIdx = Math.floor((i / gFiles.length) * redTrack.steps.length);
-            const targetStep = redTrack.steps[stepIdx];
-            gallery.push({ img, x: targetStep.x, y: targetStep.y + ((i%2===0?-1:1) * 180) - 100, w: 160, h: 160 * (img.height/img.width), rot: (Math.random()-0.5)*0.2 });
-        }
+    for (let i = 0; i < gFiles.length; i++) {
+        const img = new Image(); img.src = URL.createObjectURL(gFiles[i]);
+        await new Promise(r => img.onload = r);
+        const stepIdx = Math.floor((i / (gFiles.length || 1)) * redTrack.steps.length);
+        const targetStep = redTrack.steps[Math.min(stepIdx, redTrack.steps.length-1)];
+        gallery.push({ img, x: targetStep.x, y: targetStep.y + ((i%2===0?-1:1) * 180) - 100, w: 160, h: 160 * (img.height/img.width), rot: (Math.random()-0.5)*0.2 });
     }
 
     document.getElementById('setupPanel').style.display = 'none';
@@ -235,14 +245,8 @@ function draw() {
     tracks.forEach(t => {
         t.steps.forEach(s => {
             if(Math.abs(s.x - camX) < 1400) {
-                // 如果被敲擊過變白色，否則顯示音階顏色
                 ctx.fillStyle = s.active ? "#ffffff" : s.color;
-                // 添加發光描邊效果（如果是白色）
-                if(s.active) {
-                    ctx.shadowBlur = 15; ctx.shadowColor = "#fff";
-                } else {
-                    ctx.shadowBlur = 0;
-                }
+                if(s.active) { ctx.shadowBlur = 15; ctx.shadowColor = "#fff"; }
                 ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, 18, 9); ctx.fill();
                 ctx.shadowBlur = 0;
             }
