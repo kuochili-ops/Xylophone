@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>𓃥白六木琴工坊 - 預設三曲</title>
+    <title>𓃥白六木琴工坊 - 物理強化版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --danger: #ef4444; --success: #10b981; }
@@ -94,7 +94,11 @@ let audioCtx, tracks = [], isRunning = false, isBallMoving = false, isPaused = f
 let camX = 0, camY = 0, midiData = null, currentMsg = "";
 const cornerImg = new Image(); cornerImg.src = 'IMG_6604.png';
 
-const GRAVITY = 3200, BALL_VX = 400, BOUNCE_UP = -22, BALL_R = 12;
+// --- 依照指令調整重力與相關數值 ---
+const GRAVITY = 5200;    // 提升重力
+const BALL_VX = 400;    
+const BOUNCE_UP = -22;  
+const BALL_R = 12;
 
 function getNoteColor(midi) {
     const hue = (midi % 12) * 30;
@@ -116,7 +120,6 @@ async function loadServerMidi(filename) {
     }
 }
 
-// 初始加載 b3501.mid
 loadServerMidi('b3501.mid');
 
 function changeDefaultMidi(val) {
@@ -148,13 +151,11 @@ function previewImages(input) {
     });
 }
 
-// 物理與繪圖邏輯與先前版本一致...
 async function enterScene() {
     if(!midiData) { alert("尚未準備好 MIDI 資料"); return; }
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     currentMsg = document.getElementById('msgInit').value;
     
-    // 清除舊資料
     tracks = []; gallery = [];
     
     const sorted = [...midiData.tracks].sort((a,b) => b.notes.length - a.notes.length).slice(0, 3);
@@ -353,4 +354,3 @@ window.addEventListener('resize', () => { canvas.width = window.innerWidth; canv
 </script>
 </body>
 </html>
-
