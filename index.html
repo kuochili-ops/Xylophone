@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>𓃥白六木琴工坊 - 聲部輪替版</title>
+    <title>𓃥白六木琴工坊 - 全聲部交響版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
         :root { --accent: #3b82f6; --danger: #ef4444; --success: #10b981; }
@@ -89,18 +89,16 @@
 <script>
 const canvas = document.getElementById('stage');
 const ctx = canvas.getContext('2d', { alpha: false });
-let audioCtx, tracks = [], isRunning = false, isBallMoving = false, isPaused = false, gallery = [], stars = [];
-let camX = 0, camY = 0, midiData = null, currentMsg = "";
-
-// 讀取聲部記錄
+let audioCtx, tracks = [], bgTracks = [], isRunning = false, isBallMoving = false, isPaused = false, gallery = [], stars = [];
+let camX = 0, camY = 0, midiData = null, currentMsg = "", playbackStartTime = 0;
 let trackOffset = parseInt(localStorage.getItem('savedTrackOffset')) || 0; 
 
 const cornerImg = new Image(); cornerImg.src = 'IMG_6604.png';
-
 const GRAVITY = 5200;
 const BALL_VX = 400;    
 const BOUNCE_UP = -22;  
 const BALL_R = 12;
+const VISUAL_TRACK_COUNT = 5; // 設定視覺化球體數量
 
 function getNoteColor(midi) {
     const hue = (midi % 12) * 30;
@@ -143,98 +141,99 @@ function previewImages(input) {
 }
 
 async function initPhysics() {
-    tracks = [];
+    tracks = []; bgTracks = [];
     const allTracksSorted = [...midiData.tracks].sort((a,b) => b.notes.length - a.notes.length);
     
-    const selectedTracks = [];
-    for(let i=0; i<3; i++) {
-        let idx = (trackOffset + i) % allTracksSorted.length;
-        selectedTracks.push(allTracksSorted[idx]);
+    // 找出視覺聲部 ID 清單
+    const visualIds = [];
+    for(let i=0; i<VISUAL_TRACK_COUNT; i++) {
+        visualIds.push((trackOffset + i) % allTracksSorted.length);
     }
 
-    let globalStartTime = Math.min(...selectedTracks.map(t => t.notes[0]?.time || 0));
-    let globalEndTime = Math.max(...selectedTracks.map(t => t.notes[t.notes.length-1]?.time + t.notes[t.notes.length-1]?.duration || 0));
+    let globalStartTime = Math.min(...allTracksSorted.map(t => t.notes[0]?.time || 0));
+    let globalEndTime = Math.max(...allTracksSorted.map(t => t.notes[t.notes.length-1]?.time + t.notes[t.notes.length-1]?.duration || 0));
 
-    selectedTracks.forEach((track, idx) => {
-        const steps = [];
-        const baseOffset = idx * 220;
-        let rawNotes = track.notes.sort((a,b) => a.time - b.time);
-        let finalPathNotes = [];
+    allTracksSorted.forEach((track, originalIdx) => {
+        const isVisual = visualIds.includes(originalIdx);
         
-        for (let i = 0; i < rawNotes.length; i++) {
-            let current = rawNotes[i];
-            let isOverlapped = false;
-            for (let j = 0; j < rawNotes.length; j++) {
-                if (i === j) continue;
-                let other = rawNotes[j];
-                if (other.time >= current.time && other.time < (current.time + current.duration) && other.duration < current.duration) {
-                    isOverlapped = true; break;
-                }
-            }
-            if (!isOverlapped) {
-                if (finalPathNotes.length > 0) {
-                    let last = finalPathNotes[finalPathNotes.length-1];
-                    if (Math.abs(current.time - last.time) < 0.04) {
-                        if (current.duration < last.duration) finalPathNotes[finalPathNotes.length-1] = current;
-                        continue;
+        if (isVisual) {
+            // 視覺聲部邏輯 (維持滾球路徑)
+            const visualIdx = visualIds.indexOf(originalIdx);
+            const steps = [];
+            const baseOffset = visualIdx * 200;
+            let rawNotes = track.notes.sort((a,b) => a.time - b.time);
+            let finalPathNotes = [];
+            
+            rawNotes.forEach((current, i) => {
+                let isOverlapped = rawNotes.some((other, j) => i !== j && other.time >= current.time && other.time < (current.time + current.duration) && other.duration < current.duration);
+                if (!isOverlapped) {
+                    if (finalPathNotes.length > 0) {
+                        let last = finalPathNotes[finalPathNotes.length-1];
+                        if (Math.abs(current.time - last.time) < 0.04) {
+                            if (current.duration < last.duration) finalPathNotes[finalPathNotes.length-1] = current;
+                            return;
+                        }
                     }
+                    finalPathNotes.push(current);
                 }
-                finalPathNotes.push(current);
+            });
+
+            let startX = globalStartTime * BALL_VX;
+            let startY = (canvas.height * 0.2 + baseOffset);
+            steps.push({ x: startX, y: startY, w: (finalPathNotes[0]?.time - globalStartTime) * BALL_VX + 10 || 50, isNote: false, active: 0, color: '#1e293b' });
+
+            finalPathNotes.forEach((n, i) => {
+                let x = n.time * BALL_VX;
+                let y = startY + (i * 18);
+                let w = Math.max(n.duration * BALL_VX, 50);
+                let prev = steps[steps.length-1];
+                if (x < prev.x + 2) x = prev.x + 2;
+                let gap = x - (prev.x + prev.w);
+                if (gap > 0) prev.w += gap + 5;
+                steps.push({ x, y, w, freq: 440*Math.pow(2,(n.midi-69)/12), isNote: true, active: 0, color: getNoteColor(n.midi) });
+            });
+
+            let lastStep = steps[steps.length-1];
+            let finalTargetX = globalEndTime * BALL_VX + 200;
+            if (lastStep.x + lastStep.w < finalTargetX) {
+                steps.push({ x: lastStep.x + lastStep.w, y: lastStep.y, w: finalTargetX - (lastStep.x + lastStep.w), isNote: false, active: 0, color: '#1e293b' });
             }
+            
+            tracks.push({ 
+                steps, 
+                ball: { 
+                    x: startX + 5, y: steps[0].y - BALL_R, vx: BALL_VX, vy: 0, 
+                    color: `hsl(${(visualIdx * 360 / VISUAL_TRACK_COUNT)}, 70%, 60%)`,
+                    tails: []
+                }, 
+                cur: 0 
+            });
+        } else {
+            // 背景聲部邏輯 (純聲音觸發)
+            bgTracks.push({
+                notes: track.notes.map(n => ({ time: n.time, freq: 440*Math.pow(2,(n.midi-69)/12), played: false }))
+            });
         }
-
-        let startX = globalStartTime * BALL_VX;
-        let startY = (canvas.height * 0.3 + baseOffset);
-        steps.push({ x: startX, y: startY, w: (finalPathNotes[0]?.time - globalStartTime) * BALL_VX + 10 || 50, isNote: false, active: 0, color: '#1e293b' });
-
-        finalPathNotes.forEach((n, i) => {
-            let x = n.time * BALL_VX;
-            let y = startY + (i * 18);
-            let w = Math.max(n.duration * BALL_VX, 50);
-            let prev = steps[steps.length-1];
-            if (x < prev.x + 2) x = prev.x + 2;
-            let gap = x - (prev.x + prev.w);
-            if (gap > 0) prev.w += gap + 5;
-            steps.push({ x, y, w, freq: 440*Math.pow(2,(n.midi-69)/12), isNote: true, active: 0, color: getNoteColor(n.midi) });
-        });
-
-        let lastStep = steps[steps.length-1];
-        let finalTargetX = globalEndTime * BALL_VX + 200;
-        if (lastStep.x + lastStep.w < finalTargetX) {
-            steps.push({ x: lastStep.x + lastStep.w, y: lastStep.y, w: finalTargetX - (lastStep.x + lastStep.w), isNote: false, active: 0, color: '#1e293b' });
-        }
-        
-        tracks.push({ 
-            steps, 
-            ball: { 
-                x: startX + 5, y: steps[0].y - BALL_R, vx: BALL_VX, vy: 0, 
-                color: idx === 0 ? '#ff4757' : (idx===1?'#54a0ff':'#2ed573'),
-                tails: []
-            }, 
-            cur: 0 
-        });
     });
 
-    // 關鍵修正：切換時直接將攝影機重置到球的當前起點
     camX = tracks[0].ball.x - 150; 
-    camY = tracks[0].ball.y - 300;
+    camY = tracks[0].ball.y - 100;
 }
 
 async function enterScene() {
-    if(!midiData) { alert("尚未準備好 MIDI 資料"); return; }
+    if(!midiData) return;
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     currentMsg = document.getElementById('msgInit').value;
-    
     await initPhysics();
 
     const gFiles = document.getElementById('galleryFiles').files;
     gallery = [];
-    const redTrack = tracks[0];
+    const mainTrack = tracks[0];
     for (let i = 0; i < gFiles.length; i++) {
         const img = new Image(); img.src = URL.createObjectURL(gFiles[i]);
         await new Promise(r => img.onload = r);
-        const stepIdx = Math.floor((i / (gFiles.length || 1)) * redTrack.steps.length);
-        gallery.push({ img, x: redTrack.steps[stepIdx].x, y: redTrack.steps[stepIdx].y + ((i%2===0?-1:1) * 180) - 100, w: 160, h: 160 * (img.height/img.width), rot: (Math.random()-0.5)*0.2 });
+        const stepIdx = Math.floor((i / (gFiles.length || 1)) * mainTrack.steps.length);
+        gallery.push({ img, x: mainTrack.steps[stepIdx].x, y: mainTrack.steps[stepIdx].y + ((i%2===0?-1:1) * 250) - 100, w: 180, h: 180 * (img.height/img.width), rot: (Math.random()-0.5)*0.2 });
     }
 
     document.getElementById('setupPanel').style.display = 'none';
@@ -246,6 +245,7 @@ async function enterScene() {
 function startApp() {
     if (audioCtx.state === 'suspended') audioCtx.resume();
     isBallMoving = true; isPaused = false;
+    playbackStartTime = audioCtx.currentTime;
     document.getElementById('startBtn').innerText = "播放中";
     document.getElementById('uiPanel').classList.add('collapsed');
 }
@@ -253,76 +253,70 @@ function startApp() {
 async function cycleTracks() {
     trackOffset++;
     localStorage.setItem('savedTrackOffset', trackOffset); 
-    
-    // 強制重置播放狀態與位移
-    isBallMoving = false;
-    isPaused = false;
-    
-    // 清除舊有的 camX 位移，防止 loop() 誤判為結束
-    camX = 0; 
-    
+    isBallMoving = false; isPaused = false; camX = 0;
     document.getElementById('pauseBtn').innerText = "暫停";
-    document.getElementById('startBtn').innerText = "播放中"; 
-    
     await initPhysics(); 
-    
     if (audioCtx.state === 'suspended') audioCtx.resume();
+    playbackStartTime = audioCtx.currentTime;
     isBallMoving = true; 
 }
 
 function togglePause() {
     isPaused = !isPaused;
     document.getElementById('pauseBtn').innerText = isPaused ? "繼續" : "暫停";
+    // 簡單處理暫停補償：不精確但可用於此場景
 }
 
 function loop() {
     if (!isRunning) return;
     const dt = 1/60;
+    const currentTime = audioCtx ? (audioCtx.currentTime - playbackStartTime) : 0;
+
     if (isBallMoving && !isPaused) {
+        // 1. 物理聲部更新 (滾球)
         tracks.forEach(t => {
             const b = t.ball; let prevY = b.y;
             b.vy += GRAVITY * dt; b.x += b.vx * dt; b.y += b.vy * dt;
-            let onNote = false;
             for (let i = t.cur; i < Math.min(t.cur + 15, t.steps.length); i++) {
                 let s = t.steps[i];
                 if (b.x >= s.x && b.x <= s.x + s.w && prevY + BALL_R <= s.y + 15 && b.y + BALL_R >= s.y) {
                     b.y = s.y - BALL_R; b.vy = BOUNCE_UP; t.cur = i;
-                    if(!s.active && s.isNote) hitStep(s);
-                    if(s.isNote) onNote = true;
-                    break;
+                    if(!s.active && s.isNote) playSound(s.freq, 0.12);
+                    s.active = 1; break;
                 }
             }
-            if (!onNote) b.tails.push({ x: b.x, y: b.y, r: BALL_R, opacity: 1 });
+            if (b.x > t.steps[t.steps.length-1].x + t.steps[t.steps.length-1].w) { b.vx = 0; b.vy = 0; }
+            b.tails.push({ x: b.x, y: b.y, r: BALL_R, opacity: 1 });
             b.tails.forEach(p => { p.opacity -= 0.05; p.r *= 0.94; });
             b.tails = b.tails.filter(p => p.opacity > 0);
-            
-            // 判定該聲部是否跑完
-            if (b.x > t.steps[t.steps.length-1].x + t.steps[t.steps.length-1].w - 10) { 
-                b.vx = 0; b.vy = 0; 
-            }
+        });
+
+        // 2. 背景聲部更新 (純音頻觸發)
+        bgTracks.forEach(t => {
+            t.notes.forEach(n => {
+                if (!n.played && currentTime >= n.time) {
+                    playSound(n.freq, 0.08); // 背景音量稍小
+                    n.played = true;
+                }
+            });
         });
 
         const mb = tracks[0].ball;
-        // 攝影機跟隨
         camX += (mb.x - canvas.width * 0.22 - camX) * 0.1;
         camY += (mb.y - canvas.height * 0.45 - camY) * 0.05;
-
-        // 如果所有球都停下了，才判定為移動結束
         if (tracks.every(t => t.ball.vx === 0)) isBallMoving = false;
     }
     draw();
     requestAnimationFrame(loop);
 }
 
-function hitStep(s) {
-    if (s.active) return;
+function playSound(freq, volume) {
     const osc = audioCtx.createOscillator(); const g = audioCtx.createGain();
-    osc.type = 'triangle'; osc.frequency.setValueAtTime(s.freq, audioCtx.currentTime);
-    g.gain.setValueAtTime(0.12, audioCtx.currentTime);
+    osc.type = 'triangle'; osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    g.gain.setValueAtTime(volume, audioCtx.currentTime);
     g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
     osc.connect(g); g.connect(audioCtx.destination);
     osc.start(); osc.stop(audioCtx.currentTime + 0.3);
-    s.active = 1;
 }
 
 function initStars() {
@@ -374,7 +368,6 @@ function draw() {
     });
     ctx.restore();
 
-    // 結束畫面判斷：當球不再移動 (vx===0) 且確實已經離開起點一段距離 (camX > 500)
     if (!isBallMoving && camX > 500) {
         ctx.fillStyle = "rgba(0,0,0,0.85)"; ctx.fillRect(0,0,canvas.width,canvas.height);
         ctx.fillStyle = "#fff"; ctx.font = "bold 32px sans-serif"; ctx.textAlign = "center";
