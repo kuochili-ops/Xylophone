@@ -215,7 +215,9 @@ async function initPhysics() {
         });
     });
 
-    camX = tracks[0].ball.x - 150; camY = tracks[0].ball.y - 300;
+    // 關鍵修正：切換時直接將攝影機重置到球的當前起點
+    camX = tracks[0].ball.x - 150; 
+    camY = tracks[0].ball.y - 300;
 }
 
 async function enterScene() {
@@ -252,16 +254,20 @@ async function cycleTracks() {
     trackOffset++;
     localStorage.setItem('savedTrackOffset', trackOffset); 
     
-    // 關鍵修改：重置播放狀態，從頭開始
+    // 強制重置播放狀態與位移
     isBallMoving = false;
     isPaused = false;
+    
+    // 清除舊有的 camX 位移，防止 loop() 誤判為結束
+    camX = 0; 
+    
     document.getElementById('pauseBtn').innerText = "暫停";
     document.getElementById('startBtn').innerText = "播放中"; 
     
-    await initPhysics(); // 這會重置所有球到 X 起點
+    await initPhysics(); 
     
     if (audioCtx.state === 'suspended') audioCtx.resume();
-    isBallMoving = true; // 切換後直接從頭開跑
+    isBallMoving = true; 
 }
 
 function togglePause() {
@@ -289,11 +295,19 @@ function loop() {
             if (!onNote) b.tails.push({ x: b.x, y: b.y, r: BALL_R, opacity: 1 });
             b.tails.forEach(p => { p.opacity -= 0.05; p.r *= 0.94; });
             b.tails = b.tails.filter(p => p.opacity > 0);
-            if (b.x > t.steps[t.steps.length-1].x + t.steps[t.steps.length-1].w - 10) { b.vx = 0; b.vy = 0; }
+            
+            // 判定該聲部是否跑完
+            if (b.x > t.steps[t.steps.length-1].x + t.steps[t.steps.length-1].w - 10) { 
+                b.vx = 0; b.vy = 0; 
+            }
         });
+
         const mb = tracks[0].ball;
+        // 攝影機跟隨
         camX += (mb.x - canvas.width * 0.22 - camX) * 0.1;
         camY += (mb.y - canvas.height * 0.45 - camY) * 0.05;
+
+        // 如果所有球都停下了，才判定為移動結束
         if (tracks.every(t => t.ball.vx === 0)) isBallMoving = false;
     }
     draw();
@@ -360,6 +374,7 @@ function draw() {
     });
     ctx.restore();
 
+    // 結束畫面判斷：當球不再移動 (vx===0) 且確實已經離開起點一段距離 (camX > 500)
     if (!isBallMoving && camX > 500) {
         ctx.fillStyle = "rgba(0,0,0,0.85)"; ctx.fillRect(0,0,canvas.width,canvas.height);
         ctx.fillStyle = "#fff"; ctx.font = "bold 32px sans-serif"; ctx.textAlign = "center";
