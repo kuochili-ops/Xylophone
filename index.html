@@ -51,12 +51,12 @@
             <div id="playlistPreview">預設：b3501.mid</div>
         </div>
         <div class="input-group">
-            <label>2. 上傳多張照片</label>
+            <label>2. 上傳廊道背景照片</label>
             <input type="file" id="galleryFiles" multiple accept="image/*">
         </div>
         <div class="input-group">
             <label>3. 結束畫面訊息</label>
-            <input type="text" id="msgInit" value="演出結束，感謝欣賞">
+            <input type="text" id="msgInit" value="全集演出結束，感謝欣賞">
         </div>
         <button id="entryBtn" class="primary-btn" onclick="enterScene()">進入播放場景</button>
     </div>
@@ -89,7 +89,7 @@ function getNoteColor(midi) {
     return `hsla(${hue}, 80%, 65%, 0.85)`;
 }
 
-// 處理多選上傳
+// 處理播放清單
 function handlePlaylist(input) {
     playlist = Array.from(input.files);
     document.getElementById('playlistPreview').innerHTML = playlist.map((f, i) => `${i+1}. ${f.name}`).join('<br>');
@@ -105,7 +105,7 @@ async function loadMidiData(fileOrUrl) {
     }
     midiData = new Midi(buf);
     
-    // 計算總時長
+    // 計算總時長用於自動換歌
     currentMidiDuration = Math.max(...midiData.tracks.map(t => 
         t.notes.length > 0 ? t.notes[t.notes.length-1].time + t.notes[t.notes.length-1].duration : 0
     ));
@@ -116,33 +116,43 @@ async function loadMidiData(fileOrUrl) {
 
 async function initPhysics() {
     tracks = []; bgTracks = [];
+    [span_2](start_span)// 完全維持你原本的階梯式排列演算法[span_2](end_span)
     const allTracksSorted = [...midiData.tracks].sort((a,b) => b.notes.length - a.notes.length);
     const visualIds = Array.from({length: VISUAL_TRACK_COUNT}, (_, i) => (trackOffset + i) % allTracksSorted.length);
 
     allTracksSorted.forEach((track, originalIdx) => {
         if (visualIds.includes(originalIdx)) {
             const visualIdx = visualIds.indexOf(originalIdx);
-            const steps = [], baseY = (canvas.height * 0.2 + visualIdx * 200);
-            let rawNotes = track.notes.sort((a,b) => a.time - b.time);
+            const steps = [];
+            const baseY = (canvas.height * 0.2 + visualIdx * 200);
             
+            [span_3](start_span)// 維持你最滿意的音板路徑生成邏輯 [cite: 53-63]
+            let rawNotes = track.notes.sort((a,b) => a.time - b.time);
             rawNotes.forEach((n, i) => {
                 steps.push({ 
-                    x: n.time * BALL_VX, y: baseY + (i % 2 * 18), w: Math.max(n.duration * BALL_VX, 50), 
-                    freq: 440*Math.pow(2,(n.midi-69)/12), isNote: true, active: 0, 
+                    x: n.time * BALL_VX, 
+                    y: baseY + (i % 2 * 18), 
+                    w: Math.max(n.duration * BALL_VX, 50), 
+                    freq: 440*Math.pow(2,(n.midi-69)/12), 
+                    isNote: true, active: 0, 
                     color: getNoteColor(n.midi) 
                 });
             });
             
             tracks.push({ 
-                steps, ball: { x: (rawNotes[0]?.time*BALL_VX || 0) + 5, y: baseY - BALL_R, vx: BALL_VX, vy: 0, 
-                color: `hsl(${(visualIdx * 72)}, 70%, 60%)`, tails: [] }, cur: 0 
+                steps, 
+                ball: { 
+                    x: (rawNotes[0]?.time*BALL_VX || 0) + 5, y: baseY - BALL_R, vx: BALL_VX, vy: 0, 
+                    color: `hsl(${(visualIdx * 72)}, 70%, 60%)`, tails: [], hitFlash: 0 
+                }, 
+                cur: 0 
             });
         } else {
             bgTracks.push({ notes: track.notes.map(n => ({ time: n.time, freq: 440*Math.pow(2,(n.midi-69)/12), played: false })) });
         }
     });
     camX = tracks[0].ball.x - 150;
-    setupGallery(); // 每次更換曲目重置照片牆
+    setupGallery(); // 每次更換曲目重置照片佈局
 }
 
 function setupGallery() {
@@ -181,7 +191,7 @@ async function handleAutoNext() {
         await initPhysics();
         playbackStartTime = audioCtx.currentTime;
     } else {
-        isBallMoving = false; // 全部播完
+        isBallMoving = false; // 全部播完，顯示結束訊息
     }
 }
 
@@ -204,23 +214,21 @@ function loop() {
     const currentTime = audioCtx ? (audioCtx.currentTime - playbackStartTime) : 0;
 
     if (isBallMoving && !isPaused) {
-        // 物理更新
         tracks.forEach(t => {
             const b = t.ball; b.vy += GRAVITY * dt; b.x += b.vx * dt; b.y += b.vy * dt;
             for (let s of t.steps) {
                 if (b.x >= s.x && b.x <= s.x + s.w && b.y + BALL_R >= s.y && b.y < s.y + 15) {
                     b.y = s.y - BALL_R; b.vy = BOUNCE_UP;
-                    if(!s.active) { playSound(s.freq, 0.12); s.active = 1; b.hitFlash = 10; }
+                    if(!s.active) { playSound(s.freq, 0.12); s.active = 1; b.hitFlash = 12; }
                 }
             }
-            // 彗星長尾巴 (消失速度 0.02)
+            // 彗星尾跡邏輯 (消失速度 0.02)
             b.tails.push({ x: b.x, y: b.y, r: BALL_R, opacity: 1 });
             b.tails.forEach(p => { p.opacity -= 0.02; });
             b.tails = b.tails.filter(p => p.opacity > 0);
             if(b.hitFlash > 0) b.hitFlash--;
         });
 
-        // 背景聲部
         bgTracks.forEach(t => {
             t.notes.forEach(n => {
                 if (!n.played && currentTime >= n.time) { playSound(n.freq, 0.08); n.played = true; }
@@ -229,7 +237,7 @@ function loop() {
 
         camX += (tracks[0].ball.x - canvas.width * 0.22 - camX) * 0.1;
         
-        // 檢查是否換歌
+        // 結尾檢查：當前曲目播放完畢後自動換歌
         if (currentTime >= currentMidiDuration + 1) handleAutoNext();
     }
     draw();
@@ -277,13 +285,13 @@ function draw() {
         });
         
         const b = t.ball;
-        // 繪製尾跡 (越遠越細)
+        // 彗星尾巴 (越遠越尖細)
         b.tails.forEach(p => {
             ctx.fillStyle = b.color; ctx.globalAlpha = p.opacity * 0.4;
             ctx.beginPath(); ctx.arc(p.x, p.y, p.r * p.opacity, 0, Math.PI*2); ctx.fill();
         });
         
-        // 繪製彗星頭部 (流線梭形)
+        // 彗星頭部 (輕微梭形膠囊狀)
         ctx.save();
         ctx.translate(b.x, b.y);
         ctx.rotate(Math.atan2(b.vy, b.vx));
@@ -293,7 +301,7 @@ function draw() {
         ctx.shadowColor = ctx.fillStyle;
         
         ctx.beginPath();
-        // 長軸隨速度微調，短軸略小於 BALL_R 形成梭形
+        // 梭形：長軸 1.6 倍，短軸 0.85 倍
         ctx.ellipse(0, 0, BALL_R * 1.6, BALL_R * 0.85, 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
@@ -301,6 +309,7 @@ function draw() {
     });
     ctx.restore();
 
+    // 結束畫面判斷
     if (!isBallMoving && playlistIndex >= (playlist.length || 1) - 1 && playbackStartTime > 0) {
         ctx.fillStyle = "rgba(0,0,0,0.85)"; ctx.fillRect(0,0,canvas.width,canvas.height);
         ctx.fillStyle = "#fff"; ctx.font = "bold 32px sans-serif"; ctx.textAlign = "center";
