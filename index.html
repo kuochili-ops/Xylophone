@@ -3,76 +3,71 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>𓃥白六木琴工坊 - 樂集輪播版</title>
+    <title>𓃥白六木琴工坊 - 照片廊道藝術版</title>
     <script src="https://unpkg.com/@tonejs/midi"></script>
     <style>
-        :root { --accent: #3b82f6; --danger: #ef4444; --success: #10b981; }
+        :root { --accent: #3b82f6; --bg: #020617; --card: #0f172a; --border: #334155; }
         body { margin: 0; background: #010409; color: #fff; font-family: -apple-system, sans-serif; overflow: hidden; touch-action: none; }
         
-        #setupPanel { position: fixed; inset: 0; background: #020617; z-index: 9999; padding: 20px; display: flex; flex-direction: column; align-items: center; overflow-y: auto; }
-        .config-card { background: rgba(15, 23, 42, 0.98); padding: 25px; border-radius: 24px; border: 1px solid #334155; width: 90%; max-width: 420px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
+        #setupPanel { position: fixed; inset: 0; background: var(--bg); z-index: 9999; padding: 20px; display: flex; flex-direction: column; align-items: center; overflow-y: auto; }
+        .config-card { background: var(--card); padding: 25px; border-radius: 24px; border: 1px solid var(--border); width: 90%; max-width: 440px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
+        h2 { text-align: center; color: var(--accent); margin-bottom: 20px; }
+        
         .input-group { margin-bottom: 20px; }
         .input-group label { display: block; margin-bottom: 8px; font-size: 14px; color: #94a3b8; font-weight: bold; }
         
         select, input[type="file"], input[type="text"] { 
-            width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #334155; 
-            background: #0f172a; color: #fff; box-sizing: border-box; font-size: 14px;
+            width: 100%; padding: 12px; border-radius: 12px; border: 1px solid var(--border); 
+            background: #020617; color: #fff; box-sizing: border-box; font-size: 14px;
         }
+
+        /* 照片預覽區 */
+        #photoPreview { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 10px; }
+        .photo-thumb { aspect-ratio: 1; background: #1e293b; border-radius: 6px; overflow: hidden; border: 1px solid #334155; }
+        .photo-thumb img { width: 100%; height: 100%; object-fit: cover; }
 
         #uiPanel { position: fixed; bottom: 30px; right: 20px; z-index: 10000; display: none; flex-direction: column; align-items: flex-end; }
-        .panel-content { 
-            background: rgba(10, 15, 25, 0.95); padding: 12px; border-radius: 20px; border: 1px solid #334155; 
-            display: flex; gap: 8px; backdrop-filter: blur(20px);
-            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            flex-wrap: wrap; justify-content: flex-end; max-width: 300px;
-        }
-        #uiPanel.collapsed .panel-content { opacity: 0; transform: scale(0.6) translateY(40px); pointer-events: none; }
-        
-        .toggle-btn { width: 56px; height: 56px; border-radius: 50%; background: #0f172a; border: 2px solid #334155; color: white; font-size: 24px; cursor: pointer; display: flex; align-items: center; justify-content: center; margin-top: 10px; }
-        
-        .action-btn { padding: 10px 14px; border-radius: 12px; border: 1px solid #475569; font-weight: bold; color: #e2e8f0; cursor: pointer; font-size: 13px; background: #1e293b; transition: all 0.2s; }
-        #modeBtn { background: #312e81; color: #c7d2fe; }
+        .panel-content { background: rgba(10, 15, 25, 0.9); padding: 12px; border-radius: 20px; border: 1px solid var(--border); display: flex; gap: 8px; backdrop-filter: blur(20px); }
+        .panel-content.collapsed { display: none; }
+        .toggle-btn { width: 56px; height: 56px; border-radius: 50%; background: var(--card); border: 2px solid var(--border); color: white; font-size: 24px; cursor: pointer; margin-top: 10px; }
+        .action-btn { padding: 10px 14px; border-radius: 10px; border: 1px solid #475569; font-weight: bold; color: #e2e8f0; cursor: pointer; font-size: 13px; background: #1e293b; }
 
-        .primary-btn { width: 100%; padding: 16px; border-radius: 14px; background: var(--accent); color: white; border: none; font-weight: bold; cursor: pointer; font-size: 16px; }
-        #photoPreview { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 10px; }
-        .photo-thumb { aspect-ratio: 1; background: #1e293b; border-radius: 6px; overflow: hidden; }
+        .primary-btn { width: 100%; padding: 16px; border-radius: 14px; background: var(--accent); color: white; border: none; font-weight: bold; cursor: pointer; font-size: 16px; margin-top: 10px; }
     </style>
 </head>
 <body>
 
 <div id="setupPanel">
     <div class="config-card">
-        <h2 style="text-align:center; margin-top:0; color:var(--accent);">🎹 𓃥白六木琴工坊</h2>
+        <h2>🎹 𓃥白六木琴工坊</h2>
+        
         <div class="input-group">
-            <label>1. 選擇啟始曲目</label>
-            <select id="midiSelect" onchange="loadServerMidi(this.value)">
-                <option value="b3501.mid">b3501.mid</option>
-                <option value="kaze.mid">kaze.mid</option>
-                <option value="Mario Bros. - Super Mario Bros. Theme.mid">Super Mario Theme</option>
-            </select>
+            <label>1. 上傳樂集 (多選 MIDI)</label>
+            <input type="file" id="midiFiles" accept=".mid,.midi" multiple>
         </div>
+
         <div class="input-group">
-            <label>2. 上傳多張背景照片</label>
+            <label>2. 上傳廊道展示照片 (建議多張)</label>
             <input type="file" id="galleryFiles" multiple accept="image/*" onchange="previewImages(this)">
             <div id="photoPreview"></div>
         </div>
+
         <div class="input-group">
             <label>3. 結束畫面訊息</label>
             <input type="text" id="msgInit" value="演出結束，感謝欣賞">
         </div>
-        <button id="entryBtn" class="primary-btn" onclick="enterScene()">進入播放場景</button>
+
+        <button class="primary-btn" onclick="enterScene()">進入展示廊道</button>
     </div>
 </div>
 
 <div id="uiPanel">
-    <div class="panel-content">
+    <div id="controls" class="panel-content">
         <button id="startBtn" class="action-btn" onclick="startApp()">開始播放</button>
-        <button id="modeBtn" class="action-btn" onclick="togglePlayMode()">模式: 順序循環</button>
-        <button id="cycleBtn" class="action-btn" onclick="cycleTracks()">切換聲部</button>
-        <button id="pauseBtn" class="action-btn" onclick="togglePause()">暫停</button>
-        <button id="resetBtn" class="action-btn" onclick="location.reload()">重新設定</button>
+        <button class="action-btn" onclick="cycleTracks()">切換聲部</button>
+        <button class="action-btn" onclick="location.reload()">返回設定</button>
     </div>
-    <button class="toggle-btn" onclick="document.getElementById('uiPanel').classList.toggle('collapsed')">⚙️</button>
+    <button class="toggle-btn" onclick="document.getElementById('controls').classList.toggle('collapsed')">⚙️</button>
 </div>
 
 <canvas id="stage"></canvas>
@@ -81,150 +76,114 @@
 const canvas = document.getElementById('stage');
 const ctx = canvas.getContext('2d', { alpha: false });
 let audioCtx, tracks = [], bgTracks = [], isRunning = false, isBallMoving = false, isPaused = false, gallery = [], stars = [];
-let camX = 0, camY = 0, midiData = null, currentMsg = "", playbackStartTime = 0;
-let trackOffset = parseInt(localStorage.getItem('savedTrackOffset')) || 0; 
+let camX = 0, camY = 0, midiData = null, playbackStartTime = 0;
+let currentPlayList = [], currentMidiIndex = 0;
+let trackOffset = parseInt(localStorage.getItem('savedTrackOffset')) || 0;
 
-// 播放模式：0: 順序循環, 1: 單曲循環, 2: 隨機播放
-let playMode = 0;
-const modes = ["順序循環", "單曲循環", "隨機播放"];
-const playlist = ["b3501.mid", "kaze.mid", "Mario Bros. - Super Mario Bros. Theme.mid"];
-
-const cornerImg = new Image(); cornerImg.src = 'IMG_6604.png';
 const GRAVITY = 5200, BALL_VX = 400, BOUNCE_UP = -22, BALL_R = 12, VISUAL_TRACK_COUNT = 5;
-
-async function loadServerMidi(filename) {
-    const response = await fetch(filename);
-    const buf = await response.arrayBuffer();
-    midiData = new Midi(buf);
-    midiData.filename = filename; // 標記目前檔名
-}
-loadServerMidi(playlist[0]);
-
-function togglePlayMode() {
-    playMode = (playMode + 1) % 3;
-    document.getElementById('modeBtn').innerText = "模式: " + modes[playMode];
-}
-
-async function handleAutoNext() {
-    isBallMoving = false;
-    let nextFile = midiData.filename;
-
-    if (playMode === 0) { // 順序
-        let idx = playlist.indexOf(midiData.filename);
-        nextFile = playlist[(idx + 1) % playlist.length];
-    } else if (playMode === 2) { // 隨機
-        nextFile = playlist[Math.floor(Math.random() * playlist.length)];
-    }
-
-    await loadServerMidi(nextFile);
-    await initPhysics();
-    playbackStartTime = audioCtx.currentTime;
-    isBallMoving = true;
-}
 
 function previewImages(input) {
     const container = document.getElementById('photoPreview'); container.innerHTML = "";
-    Array.from(input.files).slice(0, 30).forEach(file => {
+    Array.from(input.files).slice(0, 15).forEach(file => {
         const img = document.createElement('img'); img.src = URL.createObjectURL(file);
         const div = document.createElement('div'); div.className = 'photo-thumb';
         div.appendChild(img); container.appendChild(div);
     });
 }
 
+async function loadMidiData(source) {
+    let buffer = (source instanceof File) ? await source.arrayBuffer() : await (await fetch(source)).arrayBuffer();
+    midiData = new Midi(buffer);
+}
+
 async function initPhysics() {
     tracks = []; bgTracks = [];
-    const allTracksSorted = [...midiData.tracks].sort((a,b) => b.notes.length - a.notes.length);
-    const visualIds = Array.from({length: VISUAL_TRACK_COUNT}, (_, i) => (trackOffset + i) % allTracksSorted.length);
+    const allTracks = [...midiData.tracks].sort((a,b) => b.notes.length - a.notes.length);
+    const visualIds = Array.from({length: VISUAL_TRACK_COUNT}, (_, i) => (trackOffset + i) % allTracks.length);
 
-    let globalStartTime = Math.min(...allTracksSorted.map(t => t.notes[0]?.time || 0));
-    let globalEndTime = Math.max(...allTracksSorted.map(t => t.notes[t.notes.length-1]?.time + t.notes[t.notes.length-1]?.duration || 0));
-
-    allTracksSorted.forEach((track, originalIdx) => {
-        if (visualIds.includes(originalIdx)) {
-            const vIdx = visualIds.indexOf(originalIdx);
-            const steps = [];
-            const baseOffset = vIdx * 200;
-            let rawNotes = track.notes.sort((a,b) => a.time - b.time);
-            let finalPath = [];
-            rawNotes.forEach((n, i) => {
-                if (!rawNotes.some((o, j) => i!==j && o.time >= n.time && o.time < (n.time+n.duration) && o.duration < n.duration)) {
-                    if (finalPath.length > 0 && Math.abs(n.time - finalPath[finalPath.length-1].time) < 0.04) return;
-                    finalPath.push(n);
-                }
-            });
-            let startX = globalStartTime * BALL_VX, startY = (canvas.height * 0.2 + baseOffset);
-            steps.push({ x: startX, y: startY, w: (finalPath[0]?.time - globalStartTime) * BALL_VX + 10 || 50, isNote: false, active: 0, color: '#1e293b' });
-            finalPath.forEach((n, i) => {
-                let x = n.time * BALL_VX, y = startY + (i * 18), w = Math.max(n.duration * BALL_VX, 50);
-                let prev = steps[steps.length-1]; if (x < prev.x + 2) x = prev.x + 2;
-                if (x - (prev.x + prev.w) > 0) prev.w += (x - (prev.x + prev.w)) + 5;
+    let gStart = Math.min(...allTracks.map(t => t.notes[0]?.time || 0));
+    allTracks.forEach((track, idx) => {
+        if (visualIds.includes(idx)) {
+            const vIdx = visualIds.indexOf(idx);
+            const steps = [], baseY = (canvas.height * 0.2 + vIdx * 200);
+            let notes = track.notes.sort((a,b) => a.time - b.time);
+            steps.push({ x: gStart * BALL_VX, y: baseY, w: 50, isNote: false, active: 0, color: '#1e293b' });
+            notes.forEach((n, ni) => {
+                let x = n.time * BALL_VX, y = baseY + (ni % 2 * 15), w = Math.max(n.duration * BALL_VX, 50);
                 steps.push({ x, y, w, freq: 440*Math.pow(2,(n.midi-69)/12), isNote: true, active: 0, color: `hsla(${(n.midi%12)*30},80%,65%,0.85)` });
             });
-            tracks.push({ steps, ball: { x: startX+5, y: steps[0].y-BALL_R, vx: BALL_VX, vy: 0, color: `hsl(${(vIdx*360/VISUAL_TRACK_COUNT)},70%,60%)`, tails: [] }, cur: 0 });
+            tracks.push({ steps, ball: { x: gStart*BALL_VX+5, y: baseY-BALL_R, vx: BALL_VX, vy: 0, color: `hsl(${(vIdx*72)},70%,60%)`, tails: [] }, cur: 0 });
         } else {
             bgTracks.push({ notes: track.notes.map(n => ({ time: n.time, freq: 440*Math.pow(2,(n.midi-69)/12), played: false })) });
         }
     });
-    camX = tracks[0].ball.x - 150; camY = tracks[0].ball.y - 100;
+    camX = tracks[0].ball.x - 100;
 }
 
 async function enterScene() {
+    const fileInput = document.getElementById('midiFiles');
+    currentPlayList = fileInput.files.length > 0 ? Array.from(fileInput.files) : ["b3501.mid"];
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    currentMsg = document.getElementById('msgInit').value;
+    await loadMidiData(currentPlayList[currentMidiIndex]);
     await initPhysics();
-    const gFiles = document.getElementById('galleryFiles').files;
+
+    // 廊道展示邏輯：將照片均勻分佈在音樂長度路徑上
+    const photoInput = document.getElementById('galleryFiles');
     gallery = [];
-    for (let i = 0; i < gFiles.length; i++) {
-        const img = new Image(); img.src = URL.createObjectURL(gFiles[i]);
-        await new Promise(r => img.onload = r);
-        let sIdx = Math.floor((i/(gFiles.length||1))*tracks[0].steps.length);
-        gallery.push({ img, x: tracks[0].steps[sIdx].x, y: tracks[0].steps[sIdx].y + ((i%2===0?-1:1)*250)-100, w: 180, h: 180*(img.height/img.width), rot: (Math.random()-0.5)*0.2 });
-    }
+    const totalLength = tracks[0].steps[tracks[0].steps.length-1].x;
+    const files = Array.from(photoInput.files);
+    
+    files.forEach((f, i) => {
+        const img = new Image(); img.src = URL.createObjectURL(f);
+        const segment = totalLength / (files.length || 1);
+        gallery.push({ 
+            img, 
+            x: i * segment + (Math.random() * 200), // 在路徑上等距排列
+            y: (i % 2 === 0 ? 50 : 600) + (Math.random() * 100), // 上下交錯分佈
+            w: 220, 
+            rot: (Math.random() - 0.5) * 0.3,
+            loaded: false
+        });
+        img.onload = () => gallery[i].loaded = true;
+    });
+
     document.getElementById('setupPanel').style.display = 'none';
-    document.getElementById('uiPanel').style.display = 'flex'; 
-    initStars(); isRunning = true; requestAnimationFrame(loop);
+    document.getElementById('uiPanel').style.display = 'flex';
+    isRunning = true; requestAnimationFrame(loop);
 }
 
 function startApp() {
     if (audioCtx.state === 'suspended') audioCtx.resume();
-    isBallMoving = true; isPaused = false; playbackStartTime = audioCtx.currentTime;
-    document.getElementById('uiPanel').classList.add('collapsed');
+    isBallMoving = true; playbackStartTime = audioCtx.currentTime;
+    document.getElementById('controls').classList.add('collapsed');
 }
 
 async function cycleTracks() {
     trackOffset++; localStorage.setItem('savedTrackOffset', trackOffset); 
-    isBallMoving = false; isPaused = false; camX = 0;
+    isBallMoving = false; camX = 0;
     await initPhysics(); playbackStartTime = audioCtx.currentTime; isBallMoving = true; 
 }
 
-function togglePause() { isPaused = !isPaused; document.getElementById('pauseBtn').innerText = isPaused ? "繼續" : "暫停"; }
-
 function loop() {
     if (!isRunning) return;
-    const dt = 1/60, currentTime = audioCtx ? (audioCtx.currentTime - playbackStartTime) : 0;
+    const dt = 1/60, now = audioCtx ? (audioCtx.currentTime - playbackStartTime) : 0;
     if (isBallMoving && !isPaused) {
         tracks.forEach(t => {
-            const b = t.ball; let prevY = b.y; b.vy += GRAVITY*dt; b.x += b.vx*dt; b.y += b.vy*dt;
-            for (let i = t.cur; i < Math.min(t.cur+15, t.steps.length); i++) {
-                let s = t.steps[i];
-                if (b.x >= s.x && b.x <= s.x+s.w && prevY+BALL_R <= s.y+15 && b.y+BALL_R >= s.y) {
-                    b.y = s.y-BALL_R; b.vy = BOUNCE_UP; t.cur = i;
+            const b = t.ball; b.vy += GRAVITY*dt; b.x += b.vx*dt; b.y += b.vy*dt;
+            for (let s of t.steps) {
+                if (b.x >= s.x && b.x <= s.x+s.w && b.y+BALL_R >= s.y && b.y < s.y+20) {
+                    b.y = s.y-BALL_R; b.vy = BOUNCE_UP;
                     if(!s.active && s.isNote) playSound(s.freq, 0.12);
                     s.active = 1; break;
                 }
             }
-            if (b.x > t.steps[t.steps.length-1].x + t.steps[t.steps.length-1].w) { b.vx = 0; b.vy = 0; }
-            b.tails.push({ x: b.x, y: b.y, r: BALL_R, opacity: 1 });
-            b.tails.forEach(p => { p.opacity -= 0.05; p.r *= 0.94; }); b.tails = b.tails.filter(p => p.opacity > 0);
+            if (b.x > t.steps[t.steps.length-1].x + 500) b.vx = 0;
+            b.tails.push({ x: b.x, y: b.y, r: BALL_R, o: 1 });
+            b.tails.forEach(p => { p.o -= 0.05; p.r *= 0.95; });
+            b.tails = b.tails.filter(p => p.o > 0);
         });
-        bgTracks.forEach(t => t.notes.forEach(n => { if (!n.played && currentTime >= n.time) { playSound(n.freq, 0.08); n.played = true; } }));
-        const mb = tracks[0].ball;
-        camX += (mb.x - canvas.width*0.22 - camX)*0.1; camY += (mb.y - canvas.height*0.45 - camY)*0.05;
-        
-        // 偵測結束並自動切換
-        if (tracks.every(t => t.ball.vx === 0) && camX > 500) {
-            handleAutoNext();
-        }
+        bgTracks.forEach(t => t.notes.forEach(n => { if (!n.played && now >= n.time) { playSound(n.freq, 0.06); n.played = true; } }));
+        camX += (tracks[0].ball.x - canvas.width*0.25 - camX)*0.1;
     }
     draw(); requestAnimationFrame(loop);
 }
@@ -232,47 +191,46 @@ function loop() {
 function playSound(f, v) {
     const o = audioCtx.createOscillator(), g = audioCtx.createGain();
     o.type = 'triangle'; o.frequency.setValueAtTime(f, audioCtx.currentTime);
-    g.gain.setValueAtTime(v, audioCtx.currentTime); g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime+0.3);
-    o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime+0.3);
+    g.gain.setValueAtTime(v, audioCtx.currentTime); g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime+0.4);
+    o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime+0.4);
 }
-
-function initStars() { stars = []; for(let i=0; i<80; i++) stars.push({ x: Math.random()*canvas.width, y: Math.random()*canvas.height, size: Math.random()*1.2, opacity: Math.random() }); }
 
 function draw() {
     ctx.fillStyle = "#010409"; ctx.fillRect(0, 0, canvas.width, canvas.height);
-    stars.forEach(s => {
-        let x = (s.x - camX*0.04)%canvas.width; if(x<0) x+=canvas.width;
-        let y = (s.y - camY*0.04)%canvas.height; if(y<0) y+=canvas.height;
-        ctx.fillStyle = `rgba(255,255,255,${s.opacity})`; ctx.beginPath(); ctx.arc(x, y, s.size, 0, Math.PI*2); ctx.fill();
-    });
-    ctx.save();
-    ctx.translate(canvas.width/2, canvas.height/2); ctx.scale(0.5, 0.5); 
-    ctx.translate(-canvas.width/2, -canvas.height/2); ctx.translate(-camX, -camY);
+    
+    ctx.save(); ctx.translate(-camX, 0);
+
+    // 廊道展示：繪製照片
     gallery.forEach(p => {
-        const d = Math.abs(p.x - camX);
-        if(d < 1800) {
-            ctx.save(); ctx.translate(p.x+p.w/2, p.y+p.h/2); ctx.rotate(p.rot);
-            ctx.globalAlpha = Math.max(0, 1 - d/1500); ctx.fillStyle = "#fff"; ctx.fillRect(-p.w/2-6, -p.h/2-6, p.w+12, p.h+12);
-            ctx.drawImage(p.img, -p.w/2, -p.h/2, p.w, p.h); ctx.restore();
+        if (!p.loaded) return;
+        const dist = Math.abs(p.x - camX - 300);
+        if (dist < 1500) { // 只繪製畫面附近的照片以節省效能
+            ctx.save();
+            ctx.translate(p.x, p.y);
+            ctx.rotate(p.rot);
+            // 廊道效果：越靠近畫面中央越亮
+            ctx.globalAlpha = Math.max(0, 1 - dist / 1200);
+            ctx.fillStyle = "#fff";
+            ctx.fillRect(-8, -8, p.w + 16, (p.w * (p.img.height/p.img.width)) + 16);
+            ctx.drawImage(p.img, 0, 0, p.w, p.w * (p.img.height/p.img.width));
+            ctx.restore();
         }
     });
+
+    // 繪製音板與小球
     tracks.forEach(t => {
         t.steps.forEach(s => {
-            if(Math.abs(s.x-camX) < 1400) {
+            if (Math.abs(s.x - camX) < 1200) {
                 ctx.fillStyle = s.active ? "#fff" : s.color;
-                if(s.active) { ctx.shadowBlur = 15; ctx.shadowColor = "#fff"; }
-                ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, 18, 9); ctx.fill(); ctx.shadowBlur = 0;
+                ctx.beginPath(); ctx.roundRect(s.x, s.y, s.w, 16, 8); ctx.fill();
             }
         });
-        const b = t.ball; b.tails.forEach(p => { ctx.fillStyle = b.color; ctx.globalAlpha = p.opacity*0.5; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill(); });
-        ctx.globalAlpha = 1; ctx.fillStyle = b.color; ctx.shadowBlur = 10; ctx.shadowColor = b.color;
-        ctx.beginPath(); ctx.arc(b.x, b.y, BALL_R, 0, Math.PI*2); ctx.fill(); ctx.shadowBlur = 0;
+        const b = t.ball; b.tails.forEach(p => { ctx.fillStyle = b.color; ctx.globalAlpha = p.o*0.4; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill(); });
+        ctx.globalAlpha = 1; ctx.fillStyle = b.color; ctx.beginPath(); ctx.arc(b.x, b.y, BALL_R, 0, Math.PI*2); ctx.fill();
     });
     ctx.restore();
-    // 這裡移除了原本的結束訊息覆蓋，改由 handleAutoNext 接手循環
 }
 canvas.width = window.innerWidth; canvas.height = window.innerHeight;
-window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; });
 </script>
 </body>
 </html>
